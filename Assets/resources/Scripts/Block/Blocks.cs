@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 public class Blocks : MonoBehaviour
 {
@@ -74,7 +74,7 @@ public class Blocks : MonoBehaviour
 
         if (lose)
         {
-            Debug.Log("Thaskfn ajkdlfn awef ");
+            Debug.Log("Thua cuộc ");
         }
     }
 

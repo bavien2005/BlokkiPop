@@ -123,8 +123,6 @@ public class Block : MonoBehaviour
         if(currentMousePosition != previouMousePosition)
         {
             previouMousePosition = currentMousePosition;
-            Debug.Log("OnMouseDrag");
-
             var inputDelta = (Vector2)mainCamera.ScreenToWorldPoint(Input.mousePosition) - inputPoint;
 
             transform.localPosition = position + inputOffset + (Vector3)inputDelta * 1.4f ;
