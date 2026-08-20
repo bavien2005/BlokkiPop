@@ -474,14 +474,32 @@ public class Board : MonoBehaviour
         var polyominoRows = polyomino.GetLength(0);
         var polyominoColums = polyomino.GetLength(1);
 
-        for (var r = 0; r <= Size - polyominoRows ; ++r)
+        var minRow = polyominoRows;
+        var maxRow = -1;
+        var minColumn = polyominoColums;
+        var maxColumn = -1;
+
+        for (var r = 0; r < polyominoRows; ++r)
         {
-            for (var c = 0; c <= Size -  polyominoColums ; ++c)
+            for (var c = 0; c < polyominoColums; ++c)
             {
-                if (CheckPlace(c , r , polyominoColums , polyominoRows, polyomino))
-                {
+                if (polyomino[r, c] <= 0) continue;
+
+                minRow = Mathf.Min(minRow, r);
+                maxRow = Mathf.Max(maxRow, r);
+                minColumn = Mathf.Min(minColumn, c);
+                maxColumn = Mathf.Max(maxColumn, c);
+            }
+        }
+
+        if (maxRow < 0 || maxColumn < 0) return false;
+
+        for (var r = -minRow; r <= Size - 1 - maxRow; ++r)
+        {
+            for (var c = -minColumn; c <= Size - 1 - maxColumn; ++c)
+            {
+                if (CheckPlace(c, r, polyominoColums, polyominoRows, polyomino))
                     return true;
-                }
             }
         }
 
@@ -494,10 +512,16 @@ public class Board : MonoBehaviour
         {
             for (var c = 0; c <  polyominoColums; ++c)
             {
-                if (polyomino[r ,c ]> 0 && data[ro + r , co + c ] == 2)
-                {
+                if (polyomino[r, c] <= 0) continue;
+
+                var boardRow = ro + r;
+                var boardColumn = co + c;
+
+                if (boardRow < 0 || boardRow >= Size ||
+                    boardColumn < 0 || boardColumn >= Size)
                     return false;
-                }
+
+                if (data[boardRow, boardColumn] == 2) return false;
             }
         }
         return true;
