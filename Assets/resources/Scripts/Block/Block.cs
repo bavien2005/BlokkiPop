@@ -36,6 +36,8 @@ public class Block : MonoBehaviour
 
     private SortingGroup sortingGroup;
 
+    private BoxCollider2D inputCollider;
+
     private int colorId;
 
     private Color blockColor; 
@@ -43,6 +45,7 @@ public class Block : MonoBehaviour
     private void Awake()
     {
         sortingGroup = gameObject.GetComponent<SortingGroup>();
+        inputCollider = gameObject.GetComponent<BoxCollider2D>();
         mainCamera = Camera.main;
     }
     public void Initialize()
@@ -69,7 +72,46 @@ public class Block : MonoBehaviour
         var polyominoRows = polyomino.GetLength(0);
         var polyminoColums = polyomino.GetLength(1);
 
-        center = new Vector2(polyminoColums * 0.5f, polyominoRows * 0.5f);
+        var minRow = polyominoRows;
+        var maxRow = -1;
+        var minColumn = polyminoColums;
+        var maxColumn = -1;
+
+        for (var r = 0; r < polyominoRows; ++r)
+        {
+            for (var c = 0; c < polyminoColums; ++c)
+            {
+                if (polyomino[r, c] <= 0) continue;
+
+                minRow = Mathf.Min(minRow, r);
+                maxRow = Mathf.Max(maxRow, r);
+                minColumn = Mathf.Min(minColumn, c);
+                maxColumn = Mathf.Max(maxColumn, c);
+            }
+        }
+
+        if (maxRow < 0 || maxColumn < 0)
+        {
+            center = new Vector2(polyminoColums * 0.5f, polyominoRows * 0.5f);
+        }
+        else
+        {
+            // Center each visible shape inside its slot, including asymmetric
+            // shapes such as L pieces and the single-cell piece.
+            center = new Vector2(
+                (minColumn + maxColumn + 1) * 0.5f,
+                (minRow + maxRow + 1) * 0.5f);
+
+            if (inputCollider != null)
+            {
+                const float touchPadding = 0.65f;
+                inputCollider.offset = Vector2.zero;
+                inputCollider.size = new Vector2(
+                    maxColumn - minColumn + 1 + touchPadding,
+                    maxRow - minRow + 1 + touchPadding);
+            }
+        }
+
         for (var r =0; r< polyominoRows; ++r)
         {
             for (var c = 0; c < polyminoColums; ++c)
@@ -118,7 +160,6 @@ public class Block : MonoBehaviour
 
     private void OnMouseDrag()
     {
-       
         var currentMousePosition = Input.mousePosition;
         if(currentMousePosition != previouMousePosition)
         {

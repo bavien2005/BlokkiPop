@@ -13,6 +13,11 @@ public class Board : MonoBehaviour
 
     [SerializeField] private BlockColorPalette colorPalette;
 
+    [Header("Effects")]
+    [SerializeField] private Color lineClearEffectColor = new(0.05f, 0.88f, 1f, 1f);
+    [SerializeField] private BoardEffects boardEffects;
+    [SerializeField] private ComboPopupController comboPopup;
+
     private readonly Cell[,] cells = new Cell[Size , Size];
    
     private readonly int[,] data = new int[Size , Size]; //0 : empty , 1 : hover , 2 : normal 
@@ -35,6 +40,10 @@ public class Board : MonoBehaviour
 
 
     private readonly List<Vector2Int> previousHoverPoints = new();
+
+
+    [Header("Coin")]
+    [SerializeField] private int valueScore; 
 
 
 
@@ -83,7 +92,7 @@ public class Board : MonoBehaviour
             previousHoverPoints.Clear();
             previousHoverPoints.AddRange(hoverPoints);
             Hover(colorId);
-            Highlight(point , polyominoColums , polyominoRows , colorId);         
+            Highlight(point , polyominoColums , polyominoRows, colorId);         
         }
         else if(previousHoverPoints.Count > 0 && Math.Abs(point.x - previousHoverPoint.x) < 2 && Math.Abs(point.y - previousHoverPoint.y) < 2)
         {
@@ -91,7 +100,7 @@ public class Board : MonoBehaviour
             hoverPoints.Clear();
             hoverPoints.AddRange(previousHoverPoints);
             Hover(colorId);
-            Highlight(point, polyominoColums, polyominoRows , colorId);
+            Highlight(point, polyominoColums, polyominoRows, colorId);
         }
         else
         {
@@ -102,6 +111,7 @@ public class Board : MonoBehaviour
 
     private void UnHighlight()
     {
+        boardEffects?.ClearClearPreview();
         UnHighlightFullLineColums();
         UnHighlightFullLineRows();
     }
@@ -184,6 +194,7 @@ public class Board : MonoBehaviour
         var polyominoColums = polyomino.GetLength(1);
 
         UnHover();
+        UnHighlight();
         HoverPoints(point, polyominoRows, polyominoColums, polyomino);
 
         if (hoverPoints.Count > 0)
@@ -224,7 +235,11 @@ public class Board : MonoBehaviour
             cells[r, c].SetBaseColor(color);
 
             cells[r, c].Normal();
+            cells[r, c].PlayPlacementPulse(
+                boardEffects != null ? boardEffects.PlacementPulseDuration : 0.16f);
         }
+
+        boardEffects?.PlayPlacement(hoverPoints, color);
 
         ClearFullLines(
             point,
@@ -239,6 +254,49 @@ public class Board : MonoBehaviour
     {
         FullLineColums(point.x, point.x + polyominoColums);
         FullLineRows(point.y, point.y + polyominoRows);
+
+       
+
+        if (fullLineColums.Count > 0 || fullLineRows.Count > 0)
+        {
+            int clearedLineCount = fullLineColums.Count + fullLineRows.Count;
+            ComboClearResult comboResult = boardEffects != null
+                ? boardEffects.RegisterClear(clearedLineCount)
+                : new ComboClearResult(1, clearedLineCount, false);
+
+            int rd = UnityEngine.Random.Range(0, 2);
+            if (rd == 0)
+            {
+                AudioManager.Instance.PlaySFX("Success");
+            }
+
+            else 
+            {
+                AudioManager.Instance.PlaySFX("Success1");
+            }
+            if(fullLineColums.Count >= 1)
+            {
+                GameFlowManager._instance.AddCoin(valueScore * fullLineColums.Count);
+            }
+
+            if (fullLineRows.Count >= 1)
+            {
+                GameFlowManager._instance.AddCoin(valueScore * fullLineRows.Count);
+            }
+
+            comboPopup?.Show(comboResult);
+            
+                boardEffects?.PlayLineClear(
+                    fullLineRows,
+                    fullLineColums,
+                    lineClearEffectColor);
+           
+            
+        }
+        else
+        {
+            boardEffects?.BreakCombo();
+        }
 
         ClearFullLineColums();
         ClearFullLineRows();
@@ -305,7 +363,9 @@ public class Board : MonoBehaviour
 
                 colorIds[r, c] = -1;
 
-                cells[r, c].Hide();
+                cells[r, c].PlayClearPulse(
+                    lineClearEffectColor,
+                    boardEffects != null ? boardEffects.CellClearDuration : 0.22f);
             }
         }
     }
@@ -320,35 +380,36 @@ public class Board : MonoBehaviour
 
                 colorIds[r, c] = -1;
 
-                cells[r, c].Hide();
+                cells[r, c].PlayClearPulse(
+                    lineClearEffectColor,
+                    boardEffects != null ? boardEffects.CellClearDuration : 0.22f);
             }
         }
     }
 
 
-    private void Highlight(Vector2Int point , int polyominoColums , int polyominoRows, int draggedColorId)
+    private void Highlight(
+        Vector2Int point,
+        int polyominoColums,
+        int polyominoRows,
+        int draggedColorId)
     {
         PredictFullLineColums(point.x, point.x + polyominoColums);
         PredictFullLineRows(point.y, point.y + polyominoRows);
 
-        HighlightFullLineColums(draggedColorId);
-        HighlightFullLineRows(draggedColorId);
+        Color draggedColor = colorPalette.GetColor(draggedColorId);
+
+        boardEffects?.SetClearPreview(fullLineRows, fullLineColums, draggedColor);
+        HighlightFullLineColums(draggedColor);
+        HighlightFullLineRows(draggedColor);
         foreach (var fullLineColumn in fullLineColums)
         {
-            int dominantColorId =GetDominantColorInColumn(fullLineColumn, draggedColorId);
-
-            Color color = colorPalette.GetColor(dominantColorId );
-
-            highlightPolyominoColums[fullLineColumn - point.x] = color;
+            highlightPolyominoColums[fullLineColumn - point.x] = draggedColor;
         }
 
         foreach (var fullLineRow in fullLineRows)
         {
-            int dominantColorId = GetDominantColorInRow( fullLineRow,draggedColorId);
-
-            Color color = colorPalette.GetColor(dominantColorId);
-
-            highlightPolyominoRows[fullLineRow - point.y] = color;
+            highlightPolyominoRows[fullLineRow - point.y] = draggedColor;
         }
     }
 
@@ -404,17 +465,13 @@ public class Board : MonoBehaviour
         }
     }
 
-    private void HighlightFullLineColums(int draggedColorId)
+    private void HighlightFullLineColums(Color previewColor)
     {
         foreach (var c in fullLineColums)
         {
-            int dominantColorId = GetDominantColorInColumn( c, draggedColorId);
-
-            UnityEngine.Color previewColor = colorPalette.GetColor(dominantColorId);
-
             for (var r = 0; r < Size; ++r)
             {
-                if (data[r, c] == 2)
+                if (data[r, c] == 2 || data[r, c] == 1)
                 {
                     cells[r, c].Highlight(previewColor);
                 }
@@ -422,17 +479,13 @@ public class Board : MonoBehaviour
         }
     }
 
-    private void HighlightFullLineRows(int draggedColorId)
+    private void HighlightFullLineRows(Color previewColor)
     {
         foreach (var r in fullLineRows)
         {
-            int dominantColorId = GetDominantColorInRow( r, draggedColorId );
-
-            Color previewColor =colorPalette.GetColor(dominantColorId);
-
             for (var c = 0; c < Size; ++c)
             {
-                if (data[r, c] == 2)
+                if (data[r, c] == 2 || data[r, c] == 1)
                 {
                     cells[r, c].Highlight(previewColor);
                 }
@@ -506,6 +559,29 @@ public class Board : MonoBehaviour
         return false;
     }
 
+    public int CountAvailablePlacements(int polyominoIndex)
+    {
+        var polyomino = Polyominos.Get(polyominoIndex);
+        var polyominoRows = polyomino.GetLength(0);
+        var polyominoColumns = polyomino.GetLength(1);
+        int placementCount = 0;
+
+        for (int row = 0; row <= Size - polyominoRows; ++row)
+        {
+            for (int column = 0; column <= Size - polyominoColumns; ++column)
+            {
+                if (CheckPlace(column, row, polyominoColumns, polyominoRows, polyomino))
+                    placementCount++;
+            }
+        }
+
+        return placementCount;
+    }
+
+    public float ComboDifficultyBonus => boardEffects != null
+        ? boardEffects.GenerationDifficultyBonus
+        : 0f;
+
     private bool CheckPlace(int co , int ro , int polyominoColums , int polyominoRows , int[,] polyomino)
     {
         for (var r = 0; r < polyominoRows; ++r)
@@ -527,67 +603,6 @@ public class Board : MonoBehaviour
         return true;
     }
 
-    private int GetDominantColorInRow( int row,  int preferredColorId)
-    {
-        int[] counts = new int[colorPalette.Count];
-
-        for (int c = 0; c < Size; ++c)
-        {
-            if (data[row, c] == 0)
-                continue;
-
-            int id = colorIds[row, c];
-
-            if (id >= 0 && id < counts.Length)
-            {
-                counts[id]++;
-            }
-        }
-
-        return GetLargestColor(counts,  preferredColorId);
-    }
-
-    private int GetDominantColorInColumn(int column, int preferredColorId)
-    {
-        int[] counts =  new int[colorPalette.Count];
-
-        for (int r = 0; r < Size; ++r)
-        {
-            if (data[r, column] == 0)
-                continue;
-
-            int id = colorIds[r, column];
-
-            if (id >= 0 && id < counts.Length)
-            {
-                counts[id]++;
-            }
-        }
-
-        return GetLargestColor( counts,preferredColorId);
-    }
-
-    private int GetLargestColor( int[] counts,int preferredColorId)
-    {
-        int result = -1;
-        int largest = -1;
-
-        for (int i = 0; i < counts.Length; ++i)
-        {
-            if (counts[i] > largest)
-            {
-                largest = counts[i];
-                result = i;
-            }
-            else if (counts[i] == largest &&  i == preferredColorId)
-            {
-                // Nếu hòa thì ưu tiên màu block đang kéo
-                result = i;
-            }
-        }
-
-        return result;
-    }
     public IReadOnlyDictionary<int, Color> HighlightPolyominoColums => highlightPolyominoColums;
 
     public IReadOnlyDictionary<int, Color>HighlightPolyominoRows

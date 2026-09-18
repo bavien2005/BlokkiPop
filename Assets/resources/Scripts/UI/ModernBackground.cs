@@ -7,6 +7,16 @@ public sealed class ModernBackground : MonoBehaviour
 {
     [SerializeField] private Sprite backgroundSprite;
 
+    [Header("Scene Objects")]
+    [Tooltip("Persistent scene renderer. Keep it as a child of the camera.")]
+    [SerializeField] private SpriteRenderer backgroundRenderer;
+
+    [Tooltip("Persistent scene object that owns the falling-light Particle System.")]
+    [SerializeField] private GameObject fallingLightsObject;
+
+    [Tooltip("Persistent scene object that owns the sparkle Particle System.")]
+    [SerializeField] private GameObject floatingDiamondsObject;
+
     [SerializeField, Min(0f)] private float driftAmount = 0.12f;
 
     [SerializeField, Min(0f)] private float driftSpeed = 0.08f;
@@ -31,6 +41,83 @@ public sealed class ModernBackground : MonoBehaviour
         floatingDiamonds = CreateFloatingDiamonds();
         UpdateLayout(true);
     }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        UnityEditor.EditorApplication.delayCall -= EnsureSceneComponentsAfterValidation;
+        UnityEditor.EditorApplication.delayCall += EnsureSceneComponentsAfterValidation;
+    }
+
+    private void EnsureSceneComponentsAfterValidation()
+    {
+        UnityEditor.EditorApplication.delayCall -= EnsureSceneComponentsAfterValidation;
+
+        if (this == null || Application.isPlaying) return;
+
+        var sceneChanged = false;
+
+        if (backgroundRenderer == null)
+        {
+            var backgroundObject = FindOrCreatePersistentChild("Modern Background Art");
+            backgroundRenderer = backgroundObject.GetComponent<SpriteRenderer>();
+            if (backgroundRenderer == null)
+                backgroundRenderer = UnityEditor.Undo.AddComponent<SpriteRenderer>(backgroundObject);
+            sceneChanged = true;
+        }
+
+        if (fallingLightsObject == null)
+        {
+            fallingLightsObject = FindOrCreatePersistentChild("Falling Light Dots");
+            sceneChanged = true;
+        }
+
+        if (floatingDiamondsObject == null)
+        {
+            floatingDiamondsObject = FindOrCreatePersistentChild("Floating Puzzle Sparkles");
+            sceneChanged = true;
+        }
+
+        if (backgroundRenderer != null)
+        {
+            backgroundRenderer.sprite = backgroundSprite;
+            backgroundRenderer.sortingOrder = -1000;
+        }
+
+        EnsureParticleComponents(fallingLightsObject);
+        EnsureParticleComponents(floatingDiamondsObject);
+
+        if (sceneChanged)
+        {
+            UnityEditor.EditorUtility.SetDirty(this);
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(gameObject.scene);
+        }
+    }
+
+    private GameObject FindOrCreatePersistentChild(string objectName)
+    {
+        var existingChild = transform.Find(objectName);
+        if (existingChild != null) return existingChild.gameObject;
+
+        var childObject = new GameObject(objectName);
+        UnityEditor.Undo.RegisterCreatedObjectUndo(
+            childObject,
+            $"Create {objectName}");
+        childObject.transform.SetParent(transform, false);
+        return childObject;
+    }
+
+    private static void EnsureParticleComponents(GameObject effectObject)
+    {
+        if (effectObject == null) return;
+
+        if (effectObject.GetComponent<ParticleSystem>() == null)
+            UnityEditor.Undo.AddComponent<ParticleSystem>(effectObject);
+
+        if (effectObject.GetComponent<ParticleSystemRenderer>() == null)
+            UnityEditor.Undo.AddComponent<ParticleSystemRenderer>(effectObject);
+    }
+#endif
 
     private void LateUpdate()
     {
@@ -69,22 +156,28 @@ public sealed class ModernBackground : MonoBehaviour
             return;
         }
 
-        var backgroundObject = new GameObject("Modern Background Art");
-        backgroundObject.transform.SetParent(transform, false);
-        backgroundTransform = backgroundObject.transform;
+        if (backgroundRenderer == null)
+        {
+            var backgroundObject = new GameObject("Modern Background Art");
+            backgroundObject.transform.SetParent(transform, false);
+            backgroundRenderer = backgroundObject.AddComponent<SpriteRenderer>();
+        }
 
-        var spriteRenderer = backgroundObject.AddComponent<SpriteRenderer>();
-        spriteRenderer.sprite = backgroundSprite;
-        spriteRenderer.sortingOrder = -1000;
+        backgroundTransform = backgroundRenderer.transform;
+        backgroundRenderer.sprite = backgroundSprite;
+        backgroundRenderer.sortingOrder = -1000;
     }
 
     private ParticleSystem CreateFallingLights()
     {
-        var particleObject = new GameObject("Falling Light Dots");
-        particleObject.transform.SetParent(transform, false);
+        var particleObject = GetOrCreateEffectObject(
+            fallingLightsObject,
+            "Falling Light Dots");
         particleObject.transform.localPosition = new Vector3(0f, 0f, 15f);
 
-        var particleSystem = particleObject.AddComponent<ParticleSystem>();
+        var particleSystem = particleObject.GetComponent<ParticleSystem>();
+        if (particleSystem == null)
+            particleSystem = particleObject.AddComponent<ParticleSystem>();
         var main = particleSystem.main;
         main.loop = true;
         main.prewarm = true;
@@ -114,6 +207,8 @@ public sealed class ModernBackground : MonoBehaviour
         ApplySoftFade(particleSystem);
 
         var renderer = particleObject.GetComponent<ParticleSystemRenderer>();
+        if (renderer == null)
+            renderer = particleObject.AddComponent<ParticleSystemRenderer>();
         renderer.renderMode = ParticleSystemRenderMode.Billboard;
         renderer.sortingOrder = -900;
         renderer.material = CreateParticleMaterial("Falling Light Material", false);
@@ -123,11 +218,14 @@ public sealed class ModernBackground : MonoBehaviour
 
     private ParticleSystem CreateFloatingDiamonds()
     {
-        var particleObject = new GameObject("Floating Puzzle Sparkles");
-        particleObject.transform.SetParent(transform, false);
+        var particleObject = GetOrCreateEffectObject(
+            floatingDiamondsObject,
+            "Floating Puzzle Sparkles");
         particleObject.transform.localPosition = new Vector3(0f, 0f, 14f);
 
-        var particleSystem = particleObject.AddComponent<ParticleSystem>();
+        var particleSystem = particleObject.GetComponent<ParticleSystem>();
+        if (particleSystem == null)
+            particleSystem = particleObject.AddComponent<ParticleSystem>();
         var main = particleSystem.main;
         main.loop = true;
         main.prewarm = true;
@@ -162,11 +260,22 @@ public sealed class ModernBackground : MonoBehaviour
         ApplySoftFade(particleSystem);
 
         var renderer = particleObject.GetComponent<ParticleSystemRenderer>();
+        if (renderer == null)
+            renderer = particleObject.AddComponent<ParticleSystemRenderer>();
         renderer.renderMode = ParticleSystemRenderMode.Billboard;
         renderer.sortingOrder = -890;
         renderer.material = CreateParticleMaterial("Puzzle Glint Material", true);
 
         return particleSystem;
+    }
+
+    private GameObject GetOrCreateEffectObject(GameObject sceneObject, string objectName)
+    {
+        if (sceneObject != null) return sceneObject;
+
+        var effectObject = new GameObject(objectName);
+        effectObject.transform.SetParent(transform, false);
+        return effectObject;
     }
 
     private static void ApplySoftFade(ParticleSystem particleSystem)

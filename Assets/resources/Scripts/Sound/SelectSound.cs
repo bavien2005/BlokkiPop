@@ -2,6 +2,9 @@
 public enum SelectSound
 {   
     PickUp,
-    Drop
+    Drop,
+    Success,
+    Success1,
+    Background
 }
 

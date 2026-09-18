@@ -1,23 +1,32 @@
 using System;
 using Unity.VisualScripting;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class AudioManager : MonoBehaviour
 {
-    protected static AudioManager instance;
-    public static AudioManager Instance => instance;
+    public static AudioManager _instance;
+    public static AudioManager Instance => _instance;
     [SerializeField] protected Sound[] musicSound, sfxSound;
-    [SerializeField] protected AudioSource musicSource, sfxSource;
-    public AudioSource SfxSource => sfxSource;
-    private  void Start()
+    [SerializeField] public AudioSource musicSource, sfxSource;
+
+
+
+    private void Start()
     {
-        this.ClockMusic();
+        PlayMusic("Background");
     }
     private void Awake()
     {
-        if (AudioManager.instance != null) 
-            Debug.LogWarning("Only 1 AudioManager allow to exist");
-        AudioManager.instance = this;
+        if (_instance == null)
+        {
+            _instance = this;
+            DontDestroyOnLoad(gameObject);
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
     }
     public void ClockMusic()
     {
@@ -27,6 +36,7 @@ public class AudioManager : MonoBehaviour
     {
         this.musicSource.gameObject.SetActive(true);
     }
+
     public void PlayMusic(string name)
     {
         Sound s = Array.Find(musicSound, sound => sound.soundName.ToString() == name);
@@ -57,5 +67,14 @@ public class AudioManager : MonoBehaviour
         Sound s = Array.Find(sfxSound, sound => sound.soundName.ToString() == name);
         if (s == null) return;
         this.sfxSource.PlayOneShot(s.clip, volume);
+    }
+
+    public void VolumeMusic(float value)
+    {
+        this.musicSource.volume = value;
+    }
+    public void VolumeSound(float value)
+    {
+        this.sfxSource.volume = value;
     }
 }
