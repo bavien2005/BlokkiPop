@@ -12931,6 +12931,7 @@ MonoBehaviour:
     guaranteedFittingBlocks: 3
     boardFitBias: -0.45
   currentDifficultyLevel: 0
+  comboDifficultyStrength: 0.55
 --- !u!210 &1654052689
 SortingGroup:
   m_ObjectHideFlags: 0

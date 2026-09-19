@@ -55,8 +55,8 @@ public class GameFlowManager : MonoBehaviour
 
     public void RestartGame()
     {
-        this.score = 0;
         CheckHighScore();
+        this.score = 0;
         SceneManager.LoadScene(1);
     }
     public void GamePlay()
