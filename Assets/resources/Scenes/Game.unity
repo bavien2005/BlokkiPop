@@ -11156,6 +11156,7 @@ MonoBehaviour:
   musicSource: {fileID: 1875974654}
   sfxSource: {fileID: 1808763751}
   voiceCalloutCooldown: 0.9
+  voiceGain: 1.214
 --- !u!4 &576030872
 Transform:
   m_ObjectHideFlags: 0
@@ -15364,7 +15365,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 0}
   m_PlayOnAwake: 1
-  m_Volume: 0
+  m_Volume: 0.628
   m_Pitch: 1
   Loop: 0
   Mute: 0
@@ -15630,7 +15631,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 0}
   m_PlayOnAwake: 1
-  m_Volume: 0.566
+  m_Volume: 0
   m_Pitch: 1
   Loop: 1
   Mute: 0
@@ -16455,7 +16456,13 @@ MonoBehaviour:
   feverColor: {r: 1, g: 0.77, b: 0.15, a: 1}
   dangerPulseThreshold: 58
   dangerPulseSpeed: 2.4
-  scoreFlyDuration: 0.72
+  scoreFlyDuration: 2
+  scoreHudTarget: {fileID: 0}
+  floatingScoreFontSize: 8
+  floatingScoreStartScale: 1.284
+  floatingScoreEndScale: 0.989
+  floatingScoreOutlineWidth: 0.23
+  floatingScoreArcHeight: 1
 --- !u!1 &2099693713
 GameObject:
   m_ObjectHideFlags: 0
