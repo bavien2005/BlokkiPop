@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -130,6 +131,19 @@ public class Block : MonoBehaviour
         }
     }
 
+    public Vector2Int GetShapeDimensions(int polyominoIndex)
+    {
+        int[,] shape = Polyominos.Get(polyominoIndex);
+        return new Vector2Int(shape.GetLength(1), shape.GetLength(0));
+    }
+
+    /// <summary>Sets the idle tray scale and caches it for restoring after a drag.</summary>
+    public void SetPreviewScale(float cellScale)
+    {
+        scale = Vector3.one * cellScale;
+        transform.localScale = scale;
+    }
+
     private void Hide()
     {
         for (var r = 0; r < Size; ++r)
@@ -143,6 +157,9 @@ public class Block : MonoBehaviour
 
     private void OnMouseDown()
     {
+        if (GameFlowManager._instance != null && GameFlowManager._instance.IsGameOver)
+            return;
+
         AudioManager.Instance.PlaySFX("PickUp");
         inputPoint = mainCamera.ScreenToWorldPoint(Input.mousePosition);
         transform.localPosition = position + inputOffset;
@@ -184,15 +201,44 @@ public class Block : MonoBehaviour
         AudioManager.Instance.PlaySFX("Drop");
         previouMousePosition = Vector3.positiveInfinity;
         currentDragPoint = Vector2Int.RoundToInt((Vector2)transform.position - center);
-        if(board.Place(currentDragPoint , polyominusIndex , colorId))
+        bool placed = board.Place(currentDragPoint , polyominusIndex , colorId);
+        if (placed)
         {
+            transform.localPosition = position;
+            transform.localScale = scale;
             gameObject.SetActive(false);
             blocks.Remove();
         }
+        else
+        {
+            AudioManager.Instance?.PlayInvalidDrop();
+            StartCoroutine(RejectDrop());
+            return;
+        }
+    }
+
+    private IEnumerator RejectDrop()
+    {
+        Vector3 dropPosition = transform.localPosition;
+        Vector3 reboundPosition = dropPosition + Vector3.up * 0.20f;
+        Vector3 dropScale = transform.localScale;
+        const float duration = 0.20f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float rebound = t < 0.42f
+                ? Mathf.Sin((t / 0.42f) * Mathf.PI * 0.5f)
+                : 1f - Mathf.Pow((t - 0.42f) / 0.58f, 2f);
+            transform.localPosition = Vector3.Lerp(dropPosition, reboundPosition, rebound);
+            transform.localScale = Vector3.Lerp(dropScale, scale * 0.88f, Mathf.Sin(t * Mathf.PI));
+            yield return null;
+        }
+
         transform.localPosition = position;
         transform.localScale = scale;
-       
-       
+        blocks.ResetBlocksSortingOrder();
     }
 
     private void Highlight( IReadOnlyDictionary<int, Color> colums,

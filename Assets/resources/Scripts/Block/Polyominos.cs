@@ -11,9 +11,9 @@ public enum PolyominoDifficulty
 
 public static class Polyominos
 {
-    // The catalogue contains every free polyomino made from one to five cells.
-    // Rotations and mirror variants are generated because the player cannot
-    // rotate a block while dragging it.
+    // The catalogue includes the classic one-to-five-cell pieces plus selected
+    // six-to-nine-cell shapes. Rotations and mirrors are generated because the
+    // player cannot rotate a block while dragging it.
     private static readonly int[][,] polyominos;
     private static readonly PolyominoDifficulty[] difficulties;
 
@@ -44,6 +44,15 @@ public static class Polyominos
         AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
             new int[,] { { 0, 1, 1 }, { 1, 1, 0 } }, PolyominoDifficulty.Standard);
 
+        // Larger but still compact shapes add variety without exceeding the
+        // existing 5x5 Block cell container. Six-cell pieces stay in Standard.
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 1, 1 } }, PolyominoDifficulty.Standard);
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 0, 1 } }, PolyominoDifficulty.Standard);
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1, 1 }, { 1, 1, 0, 0 } }, PolyominoDifficulty.Standard);
+
         // All twelve free pentominoes: F, I, L, P, N, T, U, V, W, X, Y and Z.
         AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
             new int[,] { { 0, 1, 1 }, { 1, 1, 0 }, { 0, 1, 0 } }, PolyominoDifficulty.Hard); // F
@@ -70,6 +79,19 @@ public static class Polyominos
         AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
             new int[,] { { 1, 1, 0 }, { 0, 1, 0 }, { 0, 1, 1 } }, PolyominoDifficulty.Hard); // Z
 
+        // Seven-to-nine-cell shapes. In particular, the solid 3x3 requested
+        // for the game is now part of the hard-shape pool.
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 0, 0 } }, PolyominoDifficulty.Hard); // 7-cell compact
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 0, 1 }, { 1, 1, 0 } }, PolyominoDifficulty.Hard); // 7-cell broken ring
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 0, 1 }, { 1, 1, 1 } }, PolyominoDifficulty.Hard); // 8-cell ring
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 0 } }, PolyominoDifficulty.Hard); // 8-cell almost-square
+        AddAllOrientations(generatedShapes, generatedDifficulties, catalogueKeys,
+            new int[,] { { 1, 1, 1 }, { 1, 1, 1 }, { 1, 1, 1 } }, PolyominoDifficulty.Hard); // 3x3 solid
+
         polyominos = generatedShapes.ToArray();
         difficulties = generatedDifficulties.ToArray();
     }
@@ -77,6 +99,22 @@ public static class Polyominos
     public static int[,] Get(int index) => polyominos[index];
 
     public static PolyominoDifficulty GetDifficulty(int index) => difficulties[index];
+
+    public static int GetCellCount(int index)
+    {
+        int[,] shape = polyominos[index];
+        int count = 0;
+        for (int row = 0; row < shape.GetLength(0); ++row)
+        {
+            for (int column = 0; column < shape.GetLength(1); ++column)
+            {
+                if (shape[row, column] > 0)
+                    ++count;
+            }
+        }
+
+        return count;
+    }
 
     public static int Lenght => polyominos.Length;
 

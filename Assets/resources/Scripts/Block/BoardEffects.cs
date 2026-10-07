@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public readonly struct ComboClearResult
 {
@@ -57,6 +59,28 @@ public sealed class BoardEffects : MonoBehaviour
     [SerializeField, Min(0.2f)] private float feverDuration = 3.2f;
     [SerializeField] private Color feverColor = new(1f, 0.77f, 0.15f, 1f);
 
+    [Header("Danger Feedback")]
+    [Tooltip("Board edge begins a gentle warning pulse at this danger score (0-100).")]
+    [SerializeField, Range(0f, 100f)] private float dangerPulseThreshold = 58f;
+    [Tooltip("Danger glow uses a slower heartbeat so the warning stays readable instead of stressful.")]
+    [SerializeField, Min(0.1f)] private float dangerPulseSpeed = 2.4f;
+
+    [Header("Score Reward")]
+    [Tooltip("How long the floating score reward takes to rise and curve toward the score HUD.")]
+    [SerializeField, Min(0.2f)] private float scoreFlyDuration = 0.82f;
+    [Tooltip("Optional exact score-text target. If unset, the active non-high-score TextScore is used.")]
+    [SerializeField] private TextScore scoreHudTarget;
+    [Tooltip("World-space TMP font size for each +points popup. Increase this if the numbers are hard to read on your device.")]
+    [SerializeField, Min(8f)] private float floatingScoreFontSize = 36f;
+    [Tooltip("Initial world-space scale of the floating score text when it pops from a cell.")]
+    [SerializeField, Range(0.5f, 2f)] private float floatingScoreStartScale = 1.15f;
+    [Tooltip("Final world-space scale as the score text reaches the HUD. Keep this above 0.7 for readability.")]
+    [SerializeField, Range(0.3f, 2f)] private float floatingScoreEndScale = 0.9f;
+    [Tooltip("Strength of the dark outline around floating numbers, which improves contrast over colorful blocks.")]
+    [SerializeField, Range(0f, 0.5f)] private float floatingScoreOutlineWidth = 0.22f;
+    [Tooltip("Extra upward arc height, in world units, before each score popup curves toward the HUD.")]
+    [SerializeField, Range(0f, 3f)] private float floatingScoreArcHeight = 0.9f;
+
     private readonly List<SpriteRenderer> lineFlashPool = new();
     private readonly List<SpriteRenderer> previewGlowPool = new();
     private readonly HashSet<Vector2Int> clearPoints = new();
@@ -67,11 +91,22 @@ public sealed class BoardEffects : MonoBehaviour
     private Texture2D flashTexture;
     private Sprite flashSprite;
     private SpriteRenderer boardGlowRenderer;
+    private SpriteRenderer comboGlowRing2;
+    private SpriteRenderer comboGlowRing3;
     private SpriteRenderer feverGlowRenderer;
+    private Image feverScreenDimmer;
+    private Sprite feverOverlaySprite;
+    private Transform cachedScoreTarget;
+    private Canvas cachedScoreCanvas;
     private int comboCount;
     private float comboExpiresAt;
     private float comboPulseEndsAt;
     private float feverEndsAt;
+    private float feverCollapseEndsAt;
+    private bool feverWasActive;
+    private float dangerLevel;
+    private float dangerRelaxUntil;
+    private readonly List<Vector2Int> placementRipplePoints = new();
 
     public float PlacementPulseDuration => placementPulseDuration;
     public float CellClearDuration => cellClearDuration;
@@ -84,6 +119,7 @@ public sealed class BoardEffects : MonoBehaviour
         PrepareLineFlashPool();
         PreparePreviewGlowPool();
         PrepareBoardGlow();
+        PrepareFeverScreenDimmer();
     }
 
     private void Update()
@@ -120,34 +156,77 @@ public sealed class BoardEffects : MonoBehaviour
         if (clearParticles == null || placementParticlesPerCell <= 0)
             return;
 
-        Color particleColor = Color.Lerp(Opaque(blockColor), Color.white, 0.28f);
-        foreach (Vector2Int point in placedPoints)
+        placementRipplePoints.Clear();
+        placementRipplePoints.AddRange(placedPoints);
+        if (placementRipplePoints.Count == 0)
+            return;
+
+        Vector2 center = Vector2.zero;
+        foreach (Vector2Int point in placementRipplePoints)
+            center += (Vector2)point + Vector2.one * 0.5f;
+        center /= placementRipplePoints.Count;
+        placementRipplePoints.Sort((a, b) =>
+            (((Vector2)a + Vector2.one * 0.5f) - center).sqrMagnitude.CompareTo(
+             (((Vector2)b + Vector2.one * 0.5f) - center).sqrMagnitude));
+
+        StartCoroutine(PlayPlacementRipple(
+            placementRipplePoints.ToArray(), center, Opaque(blockColor)));
+    }
+
+    private IEnumerator PlayPlacementRipple(Vector2Int[] points, Vector2 center, Color blockColor)
+    {
+        if (clearParticles == null)
+            yield break;
+
+        Color particleColor = Color.Lerp(blockColor, Color.white, 0.35f);
+        foreach (Vector2Int point in points)
         {
             for (int i = 0; i < placementParticlesPerCell; ++i)
             {
-                Vector2 direction = Random.insideUnitCircle.normalized;
+                Vector2 radial = (Vector2)point + Vector2.one * 0.5f - center;
+                Vector2 direction = radial.sqrMagnitude > 0.01f
+                    ? radial.normalized
+                    : Random.insideUnitCircle.normalized;
                 EmitParticle(
                     CellCenter(point),
-                    direction * Random.Range(0.18f, 0.55f),
+                    direction * Random.Range(0.24f, 0.62f),
                     particleColor,
                     Random.Range(0.07f, 0.12f),
                     Random.Range(0.18f, 0.28f));
             }
+            // A short stagger makes the placement feel like a ripple from its center.
+            yield return new WaitForSeconds(0.018f);
         }
     }
 
     public void PlayLineClear(
         IReadOnlyList<int> rows,
         IReadOnlyList<int> columns,
-        Color effectColor)
+        Color effectColor,
+        int clearedLineCount,
+        bool feverStarted)
     {
-        effectColor = Opaque(effectColor);
+        Color tierColor = feverStarted || clearedLineCount >= 4
+            ? feverColor
+            : clearedLineCount >= 3
+                ? Color.Lerp(effectColor, new Color(1f, 0.24f, 0.64f), 0.55f)
+                : clearedLineCount == 2
+                    ? Color.Lerp(effectColor, Color.white, 0.34f)
+                    : effectColor;
+        effectColor = Opaque(tierColor);
 
-        foreach (int row in rows)
-            PlayLineFlash(row, true, effectColor);
+        if (clearedLineCount == 2)
+        {
+            PlayDiagonalSweep(effectColor);
+        }
+        else
+        {
+            foreach (int row in rows)
+                PlayLineFlash(row, true, effectColor, clearedLineCount);
 
-        foreach (int column in columns)
-            PlayLineFlash(column, false, effectColor);
+            foreach (int column in columns)
+                PlayLineFlash(column, false, effectColor, clearedLineCount);
+        }
 
         if (clearParticles == null || clearParticlesPerCell <= 0)
             return;
@@ -165,22 +244,227 @@ public sealed class BoardEffects : MonoBehaviour
                 clearPoints.Add(new Vector2Int(column, row));
         }
 
-        foreach (Vector2Int point in clearPoints)
+        Vector2 burstCenter = FindClearIntersectionCenter(rows, columns);
+        if (clearedLineCount >= 4)
+        {
+            // A tiny anticipation beat before the largest burst gives the clear weight.
+            StartCoroutine(PlayDelayedClearBurst(
+                new List<Vector2Int>(clearPoints), burstCenter, effectColor, feverStarted));
+        }
+        else
+        {
+            EmitClearFragments(new List<Vector2Int>(clearPoints), burstCenter, effectColor, clearedLineCount, feverStarted);
+        }
+    }
+
+    private void PlayDiagonalSweep(Color color)
+    {
+        SpriteRenderer renderer = GetAvailableFlash();
+        if (renderer == null)
+            return;
+
+        Vector3 start = new(-0.8f, -0.8f, -0.08f);
+        Vector3 end = new(Board.Size + 0.8f, Board.Size + 0.8f, -0.08f);
+        renderer.transform.position = start;
+        renderer.transform.rotation = Quaternion.Euler(0f, 0f, -45f);
+        renderer.transform.localScale = new Vector3(Board.Size * 1.7f, lineFlashThickness * 1.3f, 1f);
+        renderer.color = color;
+        renderer.gameObject.SetActive(true);
+        StartCoroutine(AnimateLineFlash(renderer, start, end, 2));
+    }
+
+    private Vector2 FindClearIntersectionCenter(IReadOnlyList<int> rows, IReadOnlyList<int> columns)
+    {
+        float x = (Board.Size - 1) * 0.5f;
+        float y = (Board.Size - 1) * 0.5f;
+        if (columns.Count > 0)
+        {
+            x = 0f;
+            foreach (int column in columns)
+                x += column;
+            x /= columns.Count;
+        }
+        if (rows.Count > 0)
+        {
+            y = 0f;
+            foreach (int row in rows)
+                y += row;
+            y /= rows.Count;
+        }
+        return new Vector2(x + 0.5f, y + 0.5f);
+    }
+
+    private IEnumerator PlayDelayedClearBurst(
+        List<Vector2Int> points,
+        Vector2 burstCenter,
+        Color color,
+        bool feverStarted)
+    {
+        yield return new WaitForSeconds(0.18f);
+        EmitClearFragments(points, burstCenter, color, 4, feverStarted);
+    }
+
+    private void EmitClearFragments(
+        IReadOnlyList<Vector2Int> points,
+        Vector2 burstCenter,
+        Color color,
+        int clearedLineCount,
+        bool feverStarted)
+    {
+        foreach (Vector2Int point in points)
         {
             for (int i = 0; i < clearParticlesPerCell; ++i)
             {
-                Vector2 direction = Random.insideUnitCircle;
+                Vector2 direction = clearedLineCount >= 3
+                    ? (Vector2)point + Vector2.one * 0.5f - burstCenter
+                    : Random.insideUnitCircle;
                 if (direction.sqrMagnitude < 0.01f)
-                    direction = Vector2.up;
-
+                    direction = Random.insideUnitCircle;
                 direction.Normalize();
+
                 EmitParticle(
                     CellCenter(point),
-                    direction * Random.Range(clearParticleSpeed * 0.45f, clearParticleSpeed),
-                    Color.Lerp(effectColor, Color.white, Random.Range(0f, 0.35f)),
+                    direction * Random.Range(clearParticleSpeed * 0.45f, clearParticleSpeed) *
+                        (clearedLineCount >= 4 || feverStarted ? 1.35f : 1f),
+                    Color.Lerp(color, Color.white, Random.Range(0f, 0.35f)),
                     Random.Range(particleSizeRange.x, particleSizeRange.y),
                     Random.Range(clearParticleLifetime * 0.7f, clearParticleLifetime));
             }
+        }
+
+        if (feverStarted)
+        {
+            GetComponentInParent<Board>()?.PlayFeverPulse(feverColor);
+            PlayFeverBurst(color);
+        }
+    }
+
+    /// <summary>Computes a small scan delay so clear cells dissolve in a readable pattern.</summary>
+    public float GetClearWaveDelay(
+        Vector2Int point,
+        IReadOnlyList<int> rows,
+        IReadOnlyList<int> columns)
+    {
+        int lineCount = rows.Count + columns.Count;
+        if (lineCount <= 0)
+            return 0f;
+
+        if (lineCount == 1)
+        {
+            float alongLine = rows.Count == 1 ? point.x : point.y;
+            return alongLine * 0.018f;
+        }
+
+        if (lineCount == 2)
+            return 0.04f + Mathf.Abs(point.x - point.y) * 0.018f;
+
+        Vector2 center = new((Board.Size - 1) * 0.5f, (Board.Size - 1) * 0.5f);
+        float radius = Vector2.Distance((Vector2)point, center);
+        return lineCount >= 4
+            ? 0.28f - radius * 0.014f
+            : 0.04f + radius * 0.012f;
+    }
+
+    public void PlayScoreReward(int points, Vector3 worldOrigin, Color accent, float startDelay = 0f)
+    {
+        if (points <= 0)
+            return;
+
+        if (Time.time < feverEndsAt)
+            accent = feverColor;
+
+        GameObject rewardObject = new("Floating Score Reward", typeof(TextMeshPro));
+        rewardObject.transform.position = worldOrigin + Vector3.back * 0.15f;
+        TextMeshPro text = rewardObject.GetComponent<TextMeshPro>();
+        text.text = $"+{points:N0}";
+        text.font = TMP_Settings.defaultFontAsset;
+        text.fontSize = floatingScoreFontSize;
+        text.fontStyle = FontStyles.Bold;
+        text.alignment = TextAlignmentOptions.Center;
+        text.color = Color.Lerp(accent, Color.white, 0.35f);
+        text.outlineWidth = floatingScoreOutlineWidth;
+        text.outlineColor = new Color(0.02f, 0.05f, 0.12f, 0.8f);
+        text.sortingOrder = 40;
+        StartCoroutine(AnimateScoreReward(rewardObject.transform, text, worldOrigin, startDelay));
+    }
+
+    private IEnumerator AnimateScoreReward(Transform target, TextMeshPro text, Vector3 origin, float startDelay)
+    {
+        float wait = Mathf.Max(0f, startDelay);
+        while (wait > 0f)
+        {
+            wait -= Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        Vector3 start = origin + Vector3.up * 0.35f;
+        Vector3 end = start + Vector3.up * 1.2f;
+        Camera camera = Camera.main;
+        if (cachedScoreTarget == null)
+        {
+            TextScore scoreHud = scoreHudTarget != null
+                ? scoreHudTarget
+                : TextScore.CurrentScoreDisplay != null
+                    ? TextScore.CurrentScoreDisplay
+                    : FindFirstObjectByType<TextScore>();
+            if (scoreHud != null)
+            {
+                cachedScoreTarget = scoreHud.transform;
+                cachedScoreCanvas = scoreHud.GetComponentInParent<Canvas>();
+            }
+        }
+
+        if (camera != null && cachedScoreTarget != null)
+        {
+            Camera uiCamera = cachedScoreCanvas != null && cachedScoreCanvas.renderMode != RenderMode.ScreenSpaceOverlay
+                ? cachedScoreCanvas.worldCamera
+                : null;
+            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(uiCamera, cachedScoreTarget.position);
+            float depth = Mathf.Abs(camera.transform.position.z - origin.z);
+            end = camera.ScreenToWorldPoint(new Vector3(screenPoint.x, screenPoint.y, depth));
+        }
+
+        float elapsed = 0f;
+        Color startColor = text.color;
+        while (elapsed < scoreFlyDuration && target != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / scoreFlyDuration);
+            float eased = 1f - Mathf.Pow(1f - t, 3f);
+            Vector3 control = Vector3.Lerp(start, end, 0.5f) + Vector3.up * floatingScoreArcHeight;
+            target.position = (1f - eased) * (1f - eased) * start +
+                              2f * (1f - eased) * eased * control + eased * eased * end;
+            target.localScale = Vector3.one * Mathf.Lerp(floatingScoreStartScale, floatingScoreEndScale, eased);
+            text.color = new Color(startColor.r, startColor.g, startColor.b, 1f - t * 0.45f);
+            yield return null;
+        }
+
+        if (target != null)
+            Destroy(target.gameObject);
+    }
+
+    public void SetDangerLevel(float value)
+    {
+        dangerLevel = Mathf.Clamp(value, 0f, 100f);
+    }
+
+    public void NotifyValidMove()
+    {
+        dangerRelaxUntil = Time.time + 1.1f;
+    }
+
+    private void PlayFeverBurst(Color color)
+    {
+        if (clearParticles == null)
+            return;
+
+        Vector2 center = Vector2.one * (Board.Size * 0.5f);
+        for (int i = 0; i < 48; ++i)
+        {
+            Vector2 direction = Random.insideUnitCircle.normalized;
+            EmitParticle(center, direction * Random.Range(1.4f, 2.8f),
+                Color.Lerp(color, Color.white, Random.Range(0.25f, 0.75f)),
+                Random.Range(0.12f, 0.24f), Random.Range(0.42f, 0.70f));
         }
     }
 
@@ -312,15 +596,46 @@ public sealed class BoardEffects : MonoBehaviour
             return;
 
         boardGlowRenderer = CreateBoardGlowRenderer("Combo Border Glow", boardRenderer, -2);
+        comboGlowRing2 = CreateBoardGlowRenderer("Combo Border Ring 2", boardRenderer, -4, 2f);
+        comboGlowRing3 = CreateBoardGlowRenderer("Combo Border Ring 3", boardRenderer, -5, 3.2f);
         feverGlowRenderer = CreateBoardGlowRenderer("Fever Board Glow", boardRenderer, -3);
         boardGlowRenderer.gameObject.SetActive(false);
+        comboGlowRing2.gameObject.SetActive(false);
+        comboGlowRing3.gameObject.SetActive(false);
         feverGlowRenderer.gameObject.SetActive(false);
+    }
+
+    private void PrepareFeverScreenDimmer()
+    {
+        Canvas canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null)
+            return;
+
+        feverOverlaySprite = Sprite.Create(
+            Texture2D.whiteTexture,
+            new Rect(0f, 0f, 1f, 1f),
+            new Vector2(0.5f, 0.5f),
+            1f);
+        GameObject overlay = new("Fever Screen Dimmer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        overlay.transform.SetParent(canvas.transform, false);
+        overlay.transform.SetAsFirstSibling();
+        RectTransform rect = (RectTransform)overlay.transform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+
+        feverScreenDimmer = overlay.GetComponent<Image>();
+        feverScreenDimmer.sprite = feverOverlaySprite;
+        feverScreenDimmer.color = new Color(0.025f, 0.03f, 0.12f, 0f);
+        feverScreenDimmer.raycastTarget = false;
     }
 
     private SpriteRenderer CreateBoardGlowRenderer(
         string objectName,
         SpriteRenderer source,
-        int sortingOrder)
+        int sortingOrder,
+        float paddingScale = 1f)
     {
         GameObject glowObject = new(objectName);
         glowObject.transform.SetParent(boardGlowRoot, false);
@@ -329,7 +644,7 @@ public sealed class BoardEffects : MonoBehaviour
         renderer.sprite = source.sprite;
         renderer.sharedMaterial = source.sharedMaterial;
         renderer.drawMode = source.drawMode;
-        renderer.size = source.size + Vector2.one * boardGlowPadding * 2f;
+        renderer.size = source.size + Vector2.one * boardGlowPadding * 2f * paddingScale;
         renderer.sortingOrder = sortingOrder;
 
         Vector2 sourcePivot = GetPivotOffset(source.sprite, source.size);
@@ -434,17 +749,44 @@ public sealed class BoardEffects : MonoBehaviour
 
         bool feverActive = Time.time < feverEndsAt;
         bool comboActive = Time.time < comboPulseEndsAt;
+        bool dangerActive = dangerLevel >= dangerPulseThreshold && Time.time >= dangerRelaxUntil;
+
+        if (feverActive && !feverWasActive)
+            feverGlowRenderer.transform.localScale = Vector3.one;
+        if (feverWasActive && !feverActive)
+            feverCollapseEndsAt = Time.time + 0.34f;
+        feverWasActive = feverActive;
+        bool feverCollapsing = !feverActive && Time.time < feverCollapseEndsAt;
 
         boardGlowRenderer.gameObject.SetActive(comboActive || feverActive);
-        feverGlowRenderer.gameObject.SetActive(feverActive);
+        comboGlowRing2.gameObject.SetActive(comboActive || feverActive);
+        comboGlowRing3.gameObject.SetActive(comboActive || feverActive);
+        feverGlowRenderer.gameObject.SetActive(feverActive || dangerActive || feverCollapsing);
 
         if (comboActive || feverActive)
         {
             float comboT = Mathf.Clamp01((comboCount - 1f) / Mathf.Max(1f, feverStartCombo - 1f));
             Color color = Color.Lerp(comboStartColor, comboPeakColor, comboT);
-            float pulse = 0.70f + Mathf.Sin(Time.time * 10f) * 0.30f;
+            float glowSpeed = feverActive ? 18f : comboCount >= 3 ? 14f : 10f;
+            float pulse = 0.70f + Mathf.Sin(Time.time * glowSpeed) * 0.30f;
             float alpha = feverActive ? 0.60f : 0.20f + pulse * 0.38f;
             boardGlowRenderer.color = new Color(color.r, color.g, color.b, alpha);
+
+            float ring2Pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * glowSpeed - 0.8f);
+            float ring3Pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * glowSpeed - 1.6f);
+            float comboStrength = Mathf.InverseLerp(1f, 5f, comboCount);
+            Color ringColor = feverActive ? feverColor : color;
+            comboGlowRing2.color = new Color(ringColor.r, ringColor.g, ringColor.b,
+                (feverActive ? 0.20f : 0.05f + comboStrength * 0.17f) * ring2Pulse);
+            comboGlowRing3.color = new Color(ringColor.r, ringColor.g, ringColor.b,
+                (feverActive ? 0.12f : 0.02f + comboStrength * 0.10f) * ring3Pulse);
+            comboGlowRing2.transform.localScale = Vector3.one * (1f + ring2Pulse * 0.025f);
+            comboGlowRing3.transform.localScale = Vector3.one * (1f + ring3Pulse * 0.045f);
+        }
+        else
+        {
+            comboGlowRing2.transform.localScale = Vector3.one;
+            comboGlowRing3.transform.localScale = Vector3.one;
         }
 
         if (feverActive)
@@ -455,32 +797,66 @@ public sealed class BoardEffects : MonoBehaviour
                 feverColor.g,
                 feverColor.b,
                 0.16f + pulse * 0.32f);
+            if (feverScreenDimmer != null)
+                feverScreenDimmer.color = new Color(0.025f, 0.03f, 0.12f, 0.10f + pulse * 0.06f);
+        }
+        else if (dangerActive)
+        {
+            float amount = Mathf.InverseLerp(dangerPulseThreshold, 100f, dangerLevel);
+            float heartbeat = 0.5f + 0.5f * Mathf.Sin(Time.time * dangerPulseSpeed * Mathf.Lerp(1f, 1.8f, amount));
+            Color dangerColor = Color.Lerp(new Color(1f, 0.55f, 0.12f), new Color(1f, 0.12f, 0.22f), amount);
+            feverGlowRenderer.color = new Color(dangerColor.r, dangerColor.g, dangerColor.b,
+                0.08f + heartbeat * Mathf.Lerp(0.16f, 0.32f, amount));
+        }
+        else if (feverCollapsing)
+        {
+            float t = 1f - Mathf.Clamp01((feverCollapseEndsAt - Time.time) / 0.34f);
+            feverGlowRenderer.transform.localScale = Vector3.one * (1f - t);
+            feverGlowRenderer.color = new Color(feverColor.r, feverColor.g, feverColor.b, 0.48f * (1f - t));
+            if (feverScreenDimmer != null)
+                feverScreenDimmer.color = new Color(0.025f, 0.03f, 0.12f, 0.16f * (1f - t));
+        }
+        else
+        {
+            feverGlowRenderer.transform.localScale = Vector3.one;
+            if (feverScreenDimmer != null)
+                feverScreenDimmer.color = new Color(0.025f, 0.03f, 0.12f, 0f);
         }
     }
 
-    private void PlayLineFlash(int lineIndex, bool horizontal, Color color)
+    private void PlayLineFlash(int lineIndex, bool horizontal, Color color, int clearedLineCount)
     {
         SpriteRenderer renderer = GetAvailableFlash();
         if (renderer == null)
             return;
 
         Transform flashTransform = renderer.transform;
-        flashTransform.position = horizontal
-            ? new Vector3(Board.Size * 0.5f, lineIndex + 0.5f, -0.08f)
-            : new Vector3(lineIndex + 0.5f, Board.Size * 0.5f, -0.08f);
+        Vector3 start = horizontal
+            ? new Vector3(-0.8f, lineIndex + 0.5f, -0.08f)
+            : new Vector3(lineIndex + 0.5f, -0.8f, -0.08f);
+        Vector3 end = horizontal
+            ? new Vector3(Board.Size + 0.8f, lineIndex + 0.5f, -0.08f)
+            : new Vector3(lineIndex + 0.5f, Board.Size + 0.8f, -0.08f);
+
+        // Multi-line clears get a longer, brighter sweep; 3+ lines also flash the center more dramatically.
+        float sweepLength = clearedLineCount >= 3 ? 2.1f : 1.55f;
+        if (clearedLineCount == 2)
+            sweepLength *= 1.18f;
+        flashTransform.position = start;
         flashTransform.rotation = horizontal
             ? Quaternion.identity
             : Quaternion.Euler(0f, 0f, 90f);
-        flashTransform.localScale = Vector3.zero;
+        flashTransform.localScale = new Vector3(sweepLength, lineFlashThickness, 1f);
         renderer.color = color;
         renderer.gameObject.SetActive(true);
 
-        StartCoroutine(AnimateLineFlash(renderer));
+        StartCoroutine(AnimateLineFlash(renderer, start, end, clearedLineCount));
     }
 
-    private IEnumerator AnimateLineFlash(SpriteRenderer renderer)
+    private IEnumerator AnimateLineFlash(SpriteRenderer renderer, Vector3 start, Vector3 end, int clearedLineCount)
     {
-        float duration = Mathf.Max(0.08f, lineFlashDuration);
+        float duration = Mathf.Max(0.08f, lineFlashDuration) *
+            (clearedLineCount >= 3 ? 1.15f : 1f);
         Color color = renderer.color;
         float elapsed = 0f;
 
@@ -488,14 +864,15 @@ public sealed class BoardEffects : MonoBehaviour
         {
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
-            float grow = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 4f));
+            float travel = Mathf.SmoothStep(0f, 1f, t);
             float thicknessPulse = Mathf.Sin(t * Mathf.PI);
 
+            renderer.transform.position = Vector3.Lerp(start, end, travel);
             renderer.transform.localScale = new Vector3(
-                Board.Size * 0.26f * grow,
-                lineFlashThickness * (0.75f + thicknessPulse * 0.7f),
+                renderer.transform.localScale.x,
+                lineFlashThickness * (0.8f + thicknessPulse * (clearedLineCount >= 3 ? 1f : 0.65f)),
                 1f);
-            renderer.color = new Color(color.r, color.g, color.b, (1f - t) * 0.92f);
+            renderer.color = new Color(color.r, color.g, color.b, (1f - t) * 0.98f);
             yield return null;
         }
 
@@ -609,5 +986,7 @@ public sealed class BoardEffects : MonoBehaviour
             Destroy(particleTexture);
         if (flashTexture != null)
             Destroy(flashTexture);
+        if (feverOverlaySprite != null)
+            Destroy(feverOverlaySprite);
     }
 }

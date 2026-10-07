@@ -13,6 +13,12 @@ public class Blocks : MonoBehaviour
     [Tooltip("Vertical center of the three block previews in world space.")]
     [SerializeField] private float previewCenterY = -2.05f;
 
+    [Tooltip("Minimum clear space between the edge of the tray and preview blocks.")]
+    [SerializeField, Min(0f)] private float trayPreviewEdgePadding = 0.38f;
+
+    [Tooltip("Extra gap between each preview slot, in world units.")]
+    [SerializeField, Min(0f)] private float previewSlotGap = 0.18f;
+
     [Header("Block Tray")]
     [SerializeField] private bool showTray = true;
     [SerializeField] private Vector2 trayCenter = new(4f, -2.05f);
@@ -37,27 +43,73 @@ public class Blocks : MonoBehaviour
     [Tooltip("Extra difficulty applied while a clear combo is active. This is intentionally gentle.")]
     [SerializeField, Range(0f, 1f)] private float comboDifficultyStrength = 0.55f;
 
+    [Header("Smart Tray Generation")]
+    [Tooltip("When enabled, the generator simulates the board before showing a tray. Turn this off only to compare with the old random behaviour.")]
+    [SerializeField] private bool useSmartTrayGeneration = true;
+
+    [Tooltip("How many possible 3-block trays are sampled before choosing the safest valid one. More attempts improve quality but cost a little more CPU when a tray spawns.")]
+    [SerializeField, Range(1, 30)] private int trayCandidateAttempts = 8;
+
+    [Tooltip("Maximum placement branches checked for one shape during tray simulation. Increase toward 64 for a stricter solver; 8-16 is smooth on mobile.")]
+    [SerializeField, Range(1, 64)] private int maxSimulationBranchesPerShape = 12;
+
+    [Header("Danger Analysis")]
+    [Tooltip("How strongly a crowded or fragmented board shifts generation toward easy shapes. 0 leaves score difficulty unchanged; 1 gives strong assistance.")]
+    [SerializeField, Range(0f, 1f)] private float dangerDifficultyRelief = 0.72f;
+
+    [Tooltip("How strongly danger favors shapes with many legal positions on the board.")]
+    [SerializeField, Range(0f, 1f)] private float dangerFitBias = 0.82f;
+
+    [SerializeField, Range(0f, 100f), Tooltip("Runtime readout: 0 is a wide-open board; 100 is very crowded, fragmented, and low on legal shapes.")]
+    private float currentBoardDanger;
+
+    [Header("Rescue Mode")]
+    [Tooltip("Rescue is considered only when the danger score reaches this value. It increases the chance of compact shapes and shapes that can clear now.")]
+    [SerializeField, Range(0f, 100f)] private float rescueDangerThreshold = 80f;
+
+    [Tooltip("How many consecutive high-danger trays are needed before rescue may activate. Use 1 to rescue immediately.")]
+    [SerializeField, Range(1, 3)] private int rescueDangerStreakRequired = 1;
+
+    [Tooltip("Chance that rescue activates after the danger threshold and streak requirement are reached.")]
+    [SerializeField, Range(0f, 1f)] private float rescueActivationChance = 0.78f;
+
+    [Tooltip("Extra preference for shapes that have an immediate row or column clear available while rescue is active.")]
+    [SerializeField, Range(0f, 2f)] private float rescueClearPriority = 1.15f;
+
+    [SerializeField, Tooltip("Runtime readout: true when the current tray was generated with rescue assistance.")]
+    private bool rescueActive;
+
+    [SerializeField, Tooltip("Runtime readout: consecutive tray generations above the rescue danger threshold.")]
+    private int highDangerTrayStreak;
+
     private int[] polyominoIndexes;
     private int blockCount;
 
     private readonly List<int> allShapeIndexes = new();
     private readonly List<int> fittingShapeIndexes = new();
+    private readonly Dictionary<int, ShapeMetrics> shapeMetrics = new();
+
+    private readonly struct ShapeMetrics
+    {
+        public readonly int Placements;
+        public readonly int ClearingPlacements;
+        public readonly bool HasClearingData;
+
+        public ShapeMetrics(int placements, int clearingPlacements, bool hasClearingData)
+        {
+            Placements = placements;
+            ClearingPlacements = clearingPlacements;
+            HasClearingData = hasClearingData;
+        }
+    }
 
     private void Start()
     {
         ApplyTrayLayout();
+        ApplyPreviewLayout();
 
-        float blockWidth = (float)Board.Size / blocks.Length;
         for (int i = 0; i < blocks.Length; ++i)
         {
-            blocks[i].transform.localPosition = new Vector3(
-                blockWidth * (i + 0.5f),
-                previewCenterY,
-                0f);
-            blocks[i].transform.localScale = new Vector3(
-                previewCellSize,
-                previewCellSize,
-                previewCellSize);
             blocks[i].Initialize();
         }
 
@@ -83,8 +135,37 @@ public class Blocks : MonoBehaviour
             return;
 
         ApplyTrayLayout();
+        ApplyPreviewLayout();
     }
 #endif
+
+    /// <summary>
+    /// Keeps the three preview slots centered in the tray in Edit Mode as well
+    /// as Play Mode. Their positions are derived from the board width, rather
+    /// than being hand-dragged scene offsets.
+    /// </summary>
+    private void ApplyPreviewLayout()
+    {
+        if (blocks == null || blocks.Length == 0)
+            return;
+
+        float contentWidth = Mathf.Max(
+            0.1f,
+            Mathf.Min(Board.Size, traySize.x) - trayPreviewEdgePadding * 2f);
+        float slotWidth = contentWidth / blocks.Length;
+        float firstSlotCenterX = (Board.Size - contentWidth) * 0.5f + slotWidth * 0.5f;
+        for (int i = 0; i < blocks.Length; ++i)
+        {
+            if (blocks[i] == null)
+                continue;
+
+            blocks[i].transform.localPosition = new Vector3(
+                firstSlotCenterX + slotWidth * i,
+                previewCenterY,
+                0f);
+            blocks[i].transform.localScale = Vector3.one * previewCellSize;
+        }
+    }
 
     private void ApplyTrayLayout()
     {
@@ -157,12 +238,16 @@ public class Blocks : MonoBehaviour
     private void Generate()
     {
         BlockDifficultyLevel level = ResolveDifficultyLevel();
+        shapeMetrics.Clear();
         RefreshShapeCandidates();
 
-        bool[] mustFit = CreateFittingSlots(level.guaranteedFittingBlocks);
+        int[] selectedShapes = useSmartTrayGeneration
+            ? GenerateSmartTray(level)
+            : GenerateBasicTray(level);
+
         for (int i = 0; i < blocks.Length; ++i)
         {
-            polyominoIndexes[i] = ChoosePolyomino(level, mustFit[i]);
+            polyominoIndexes[i] = selectedShapes[i];
 
             int colorId = colorPalette.GetRandomColorId();
             Color color = colorPalette.GetColor(colorId);
@@ -170,8 +255,165 @@ public class Blocks : MonoBehaviour
             blocks[i].SetColor(colorId, color);
             blocks[i].gameObject.SetActive(true);
             blocks[i].Show(polyominoIndexes[i]);
+            FitBlockPreviewInTray(i, polyominoIndexes[i]);
             ++blockCount;
         }
+    }
+
+    private void FitBlockPreviewInTray(int slotIndex, int shapeIndex)
+    {
+        if (blocks == null || slotIndex < 0 || slotIndex >= blocks.Length || blocks[slotIndex] == null)
+            return;
+
+        Vector2Int shapeSize = blocks[slotIndex].GetShapeDimensions(shapeIndex);
+        float contentWidth = Mathf.Max(
+            0.1f,
+            Mathf.Min(Board.Size, traySize.x) - trayPreviewEdgePadding * 2f);
+        float slotWidth = contentWidth / Mathf.Max(1, blocks.Length);
+        float availableWidth = Mathf.Max(0.1f, slotWidth - previewSlotGap);
+        float availableHeight = Mathf.Max(0.1f, traySize.y - trayPreviewEdgePadding * 2f);
+        float fitScale = Mathf.Min(
+            previewCellSize,
+            availableWidth / Mathf.Max(1, shapeSize.x),
+            availableHeight / Mathf.Max(1, shapeSize.y));
+
+        blocks[slotIndex].SetPreviewScale(fitScale);
+    }
+
+    private int[] GenerateBasicTray(BlockDifficultyLevel level)
+    {
+        rescueActive = false;
+        currentBoardDanger = 0f;
+        bool[] mustFit = CreateFittingSlots(level.guaranteedFittingBlocks);
+        int[] result = new int[blocks.Length];
+        bool[,] state = board != null ? board.CreateOccupancySnapshot() : null;
+        for (int i = 0; i < result.Length; ++i)
+            result[i] = ChoosePolyomino(level, mustFit[i], state, default, false);
+        return result;
+    }
+
+    private int[] GenerateSmartTray(BlockDifficultyLevel level)
+    {
+        if (board == null)
+            return GenerateBasicTray(level);
+
+        bool[,] startingState = board.CreateOccupancySnapshot();
+        BoardRiskReport risk = BoardSimulation.Analyze(startingState);
+        currentBoardDanger = risk.Danger;
+        highDangerTrayStreak = risk.Danger >= rescueDangerThreshold
+            ? highDangerTrayStreak + 1
+            : 0;
+
+        rescueActive = highDangerTrayStreak >= rescueDangerStreakRequired &&
+                       Random.value <= rescueActivationChance;
+
+        int[] bestTray = null;
+        float bestQuality = float.NegativeInfinity;
+        int attempts = rescueActive ? trayCandidateAttempts + 6 : trayCandidateAttempts;
+
+        for (int attempt = 0; attempt < attempts; ++attempt)
+        {
+            int[] candidate = new int[blocks.Length];
+            for (int slot = 0; slot < candidate.Length; ++slot)
+                candidate[slot] = ChoosePolyomino(level, true, startingState, risk, rescueActive);
+
+            // The recursive search tries every A/B/C order and the best legal
+            // placements within each order. A tray is kept only if all 3 pieces
+            // have at least one simulated route.
+            if (!BoardSimulation.HasPlayableOrder(startingState, candidate, maxSimulationBranchesPerShape))
+                continue;
+
+            // Score only the most promising routes after the deeper validity
+            // search has already proved that the whole tray can be played.
+            TraySimulationResult route = BoardSimulation.EvaluateTray(
+                startingState, candidate, maxSimulationBranchesPerShape);
+            float quality = EvaluateTray(candidate, startingState, rescueActive, level, route);
+            if (quality > bestQuality)
+            {
+                bestQuality = quality;
+                bestTray = candidate;
+            }
+        }
+
+        if (bestTray != null)
+            return bestTray;
+
+        // A completely cramped board can have no three-piece route at all. This
+        // fallback still gives the player the smallest, most placeable shapes
+        // instead of manufacturing an impossible hard tray.
+        return GenerateEmergencyFallback(startingState);
+    }
+
+    private float EvaluateTray(
+        IReadOnlyList<int> tray,
+        bool[,] state,
+        bool rescue,
+        BlockDifficultyLevel level,
+        TraySimulationResult route)
+    {
+        float quality = 0f;
+        foreach (int shapeIndex in tray)
+        {
+            ShapeMetrics metrics = GetShapeMetrics(state, shapeIndex);
+            // Fit count is a mild tie-breaker only; it must not make tiny pieces
+            // dominate just because they can be placed in many locations.
+            quality += metrics.Placements * 0.04f;
+            quality += metrics.ClearingPlacements * (rescue ? rescueClearPriority * 1.5f : 0.25f);
+        }
+
+        if (route.HasPlayableOrder)
+            quality += route.Quality * level.clearOpportunityWeight;
+        if (rescue && route.HasPlayableOrder)
+            quality += route.ClearedLines * rescueClearPriority * 8f;
+        return quality;
+    }
+
+    private int[] GenerateEmergencyFallback(bool[,] state)
+    {
+        int[] fallback = new int[blocks.Length];
+        bool[,] simulatedState = state;
+
+        // Build an emergency tray one piece at a time. Each chosen piece is
+        // actually placed in the copied board before selecting the next one,
+        // so the fallback itself has a real legal route in slot order.
+        for (int slot = 0; slot < fallback.Length; ++slot)
+        {
+            int bestShape = -1;
+            SimulatedPlacement bestPlacement = default;
+            float bestQuality = float.NegativeInfinity;
+
+            foreach (int shapeIndex in allShapeIndexes)
+            {
+                List<SimulatedPlacement> placements = BoardSimulation.GetPlacements(simulatedState, shapeIndex);
+                if (placements.Count == 0)
+                    continue;
+
+                SimulatedPlacement placement = placements[0];
+                int cellCount = Polyominos.GetCellCount(shapeIndex);
+                float sizePreference = 5f - Mathf.Abs(cellCount - 4) * 1.5f;
+                float quality = placement.Quality + sizePreference;
+                if (quality > bestQuality)
+                {
+                    bestShape = shapeIndex;
+                    bestPlacement = placement;
+                    bestQuality = quality;
+                }
+            }
+
+            // There is no remaining empty space for any shape. The game-over
+            // check will handle this truly terminal board after generation.
+            if (bestShape < 0)
+            {
+                fallback[slot] = 0;
+                continue;
+            }
+
+            fallback[slot] = bestShape;
+            simulatedState = BoardSimulation.ApplyPlacement(
+                simulatedState, bestShape, bestPlacement.Column, bestPlacement.Row, out _);
+        }
+
+        return fallback;
     }
 
     private BlockDifficultyLevel ResolveDifficultyLevel()
@@ -224,7 +466,12 @@ public class Blocks : MonoBehaviour
         return slots;
     }
 
-    private int ChoosePolyomino(BlockDifficultyLevel level, bool mustFit)
+    private int ChoosePolyomino(
+        BlockDifficultyLevel level,
+        bool mustFit,
+        bool[,] state,
+        BoardRiskReport risk,
+        bool isRescue)
     {
         List<int> source = mustFit && fittingShapeIndexes.Count > 0
             ? fittingShapeIndexes
@@ -237,7 +484,11 @@ public class Blocks : MonoBehaviour
             ? board.ComboDifficultyBonus * comboDifficultyStrength
             : 0f;
 
-        PolyominoDifficulty desiredDifficulty = RollDifficulty(level, comboBonus);
+        float dangerRelief = Mathf.Clamp01(risk.Danger / 100f) * dangerDifficultyRelief;
+        if (isRescue)
+            dangerRelief = Mathf.Min(1.35f, dangerRelief + 0.38f);
+
+        PolyominoDifficulty desiredDifficulty = RollDifficulty(level, comboBonus, dangerRelief);
         List<int> matchingDifficulty = new();
         foreach (int index in source)
         {
@@ -247,14 +498,16 @@ public class Blocks : MonoBehaviour
 
         return SelectByBoardFit(
             matchingDifficulty.Count > 0 ? matchingDifficulty : source,
-            Mathf.Clamp(level.boardFitBias - comboBonus, -1f, 1f));
+            state,
+            Mathf.Clamp(level.boardFitBias - comboBonus + Mathf.Clamp01(risk.Danger / 100f) * dangerFitBias, -1f, 1f),
+            isRescue);
     }
 
-    private static PolyominoDifficulty RollDifficulty(BlockDifficultyLevel level, float comboBonus)
+    private static PolyominoDifficulty RollDifficulty(BlockDifficultyLevel level, float comboBonus, float dangerRelief)
     {
-        float easy = Mathf.Max(0f, level.easyWeight - comboBonus * 0.65f);
-        float standard = Mathf.Max(0f, level.standardWeight + comboBonus * 0.10f);
-        float hard = Mathf.Max(0f, level.hardWeight + comboBonus * 0.75f);
+        float easy = Mathf.Max(0f, level.easyWeight - comboBonus * 0.65f + dangerRelief);
+        float standard = Mathf.Max(0f, level.standardWeight + comboBonus * 0.10f + dangerRelief * 0.12f);
+        float hard = Mathf.Max(0f, level.hardWeight + comboBonus * 0.75f - dangerRelief * 0.72f);
         float total = easy + standard + hard;
         if (total <= 0.001f)
             return PolyominoDifficulty.Standard;
@@ -267,24 +520,78 @@ public class Blocks : MonoBehaviour
         return PolyominoDifficulty.Hard;
     }
 
-    private int SelectByBoardFit(List<int> candidates, float fitBias)
+    private int SelectByBoardFit(List<int> candidates, bool[,] state, float fitBias, bool isRescue)
     {
-        if (candidates.Count == 1 || board == null || Mathf.Abs(fitBias) < 0.01f)
+        if (candidates.Count == 1 || state == null || Mathf.Abs(fitBias) < 0.01f)
             return candidates[Random.Range(0, candidates.Count)];
 
-        List<int> sorted = new(candidates);
-        sorted.Sort((left, right) => board.CountAvailablePlacements(left)
-            .CompareTo(board.CountAvailablePlacements(right)));
+        // Use a soft weighted roll instead of selecting only from the top
+        // quarter. The old rule repeatedly chose monominoes because they have
+        // the most legal placements, especially on an empty board.
+        float[] scores = new float[candidates.Count];
+        float minScore = float.PositiveInfinity;
+        float maxScore = float.NegativeInfinity;
+        for (int i = 0; i < candidates.Count; ++i)
+        {
+            scores[i] = ShapeSafetyScore(state, candidates[i], isRescue);
+            minScore = Mathf.Min(minScore, scores[i]);
+            maxScore = Mathf.Max(maxScore, scores[i]);
+        }
 
-        if (fitBias > 0f)
-            sorted.Reverse();
-
+        float totalWeight = 0f;
+        float[] weights = new float[candidates.Count];
+        float scoreRange = Mathf.Max(0.001f, maxScore - minScore);
         float strength = Mathf.Abs(fitBias);
-        int topRange = Mathf.Clamp(
-            Mathf.CeilToInt(Mathf.Lerp(sorted.Count, Mathf.Max(1, sorted.Count / 4), strength)),
-            1,
-            sorted.Count);
-        return sorted[Random.Range(0, topRange)];
+        for (int i = 0; i < candidates.Count; ++i)
+        {
+            float normalized = Mathf.Clamp01((scores[i] - minScore) / scoreRange);
+            if (fitBias < 0f)
+                normalized = 1f - normalized;
+
+            // Even the least board-optimal shape keeps a meaningful chance.
+            weights[i] = Mathf.Lerp(1f, 0.45f + normalized * 1.1f, strength);
+            totalWeight += weights[i];
+        }
+
+        float roll = Random.value * totalWeight;
+        for (int i = 0; i < candidates.Count; ++i)
+        {
+            roll -= weights[i];
+            if (roll <= 0f)
+                return candidates[i];
+        }
+
+        return candidates[candidates.Count - 1];
+    }
+
+    private float ShapeSafetyScore(bool[,] state, int shapeIndex, bool isRescue)
+    {
+        ShapeMetrics metrics = GetShapeMetrics(state, shapeIndex, isRescue);
+        float placements = metrics.Placements;
+        if (!isRescue)
+            return placements;
+
+        return placements + metrics.ClearingPlacements * rescueClearPriority * 10f;
+    }
+
+    private ShapeMetrics GetShapeMetrics(bool[,] state, int shapeIndex, bool includeClearingData = true)
+    {
+        if (shapeMetrics.TryGetValue(shapeIndex, out ShapeMetrics metrics))
+        {
+            if (!includeClearingData || metrics.HasClearingData)
+                return metrics;
+        }
+
+        int placements = metrics.Placements;
+        if (placements == 0 && !shapeMetrics.ContainsKey(shapeIndex))
+            placements = BoardSimulation.CountAvailablePlacements(state, shapeIndex);
+
+        int clearingPlacements = includeClearingData && placements > 0
+            ? BoardSimulation.CountLineClearingPlacements(state, shapeIndex)
+            : 0;
+        metrics = new ShapeMetrics(placements, clearingPlacements, includeClearingData);
+        shapeMetrics[shapeIndex] = metrics;
+        return metrics;
     }
 
     private static BlockDifficultyLevel[] CreateDefaultDifficultyLevels()
@@ -295,51 +602,56 @@ public class Blocks : MonoBehaviour
             {
                 displayName = "Level 1 - Gentle Start",
                 scoreThreshold = 0,
-                easyWeight = 0.90f,
-                standardWeight = 0.10f,
-                hardWeight = 0f,
+                easyWeight = 0.65f,
+                standardWeight = 0.30f,
+                hardWeight = 0.05f,
                 guaranteedFittingBlocks = 3,
-                boardFitBias = 0.90f
+                boardFitBias = 0.25f,
+                clearOpportunityWeight = 0.9f
             },
             new BlockDifficultyLevel
             {
                 displayName = "Level 2 - Building Up",
-                scoreThreshold = 300,
-                easyWeight = 0.60f,
-                standardWeight = 0.35f,
-                hardWeight = 0.05f,
+                scoreThreshold = 600,
+                easyWeight = 0.50f,
+                standardWeight = 0.38f,
+                hardWeight = 0.12f,
                 guaranteedFittingBlocks = 3,
-                boardFitBias = 0.55f
+                boardFitBias = 0.20f,
+                clearOpportunityWeight = 0.82f
             },
             new BlockDifficultyLevel
             {
                 displayName = "Level 3 - Balanced",
-                scoreThreshold = 800,
-                easyWeight = 0.35f,
-                standardWeight = 0.45f,
-                hardWeight = 0.20f,
+                scoreThreshold = 1500,
+                easyWeight = 0.32f,
+                standardWeight = 0.43f,
+                hardWeight = 0.25f,
                 guaranteedFittingBlocks = 3,
-                boardFitBias = 0.20f
+                boardFitBias = 0.05f,
+                clearOpportunityWeight = 0.72f
             },
             new BlockDifficultyLevel
             {
                 displayName = "Level 4 - Challenging",
-                scoreThreshold = 1600,
-                easyWeight = 0.15f,
-                standardWeight = 0.45f,
-                hardWeight = 0.40f,
+                scoreThreshold = 3000,
+                easyWeight = 0.18f,
+                standardWeight = 0.38f,
+                hardWeight = 0.44f,
                 guaranteedFittingBlocks = 3,
-                boardFitBias = -0.10f
+                boardFitBias = -0.08f,
+                clearOpportunityWeight = 0.62f
             },
             new BlockDifficultyLevel
             {
                 displayName = "Level 5 - Expert",
-                scoreThreshold = 3000,
-                easyWeight = 0.05f,
-                standardWeight = 0.30f,
-                hardWeight = 0.65f,
+                scoreThreshold = 5200,
+                easyWeight = 0.10f,
+                standardWeight = 0.34f,
+                hardWeight = 0.56f,
                 guaranteedFittingBlocks = 3,
-                boardFitBias = -0.45f
+                boardFitBias = -0.18f,
+                clearOpportunityWeight = 0.52f
             }
         };
     }
@@ -365,8 +677,7 @@ public class Blocks : MonoBehaviour
 
         if (lose)
         {
-            GameFlowManager._instance.CheckHighScore();
-            Debug.Log("Thua cuộc ");
+            GameFlowManager._instance?.GameOver();
         }
     }
 

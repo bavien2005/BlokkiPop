@@ -97,22 +97,59 @@ public class Cell : MonoBehaviour
 
     public void PlayPlacementPulse(float duration = 0.16f)
     {
+        PlayPlacementPulse(duration, 0f);
+    }
+
+    public void PlayPlacementPulse(float duration, float delay)
+    {
         StopVisualAnimation();
         SetPreviewGlow(false, Color.clear);
         gameObject.SetActive(true);
-        visualAnimation = StartCoroutine(PlacementPulse(duration));
+        visualAnimation = StartCoroutine(PlacementPulse(duration, delay));
+    }
+
+    /// <summary>Glows an already occupied neighboring cell as the placement ripple passes it.</summary>
+    public void PlayRippleFlash(Color rippleColor, float delay)
+    {
+        StopVisualAnimation();
+        gameObject.SetActive(true);
+        visualAnimation = StartCoroutine(RippleFlash(rippleColor, delay));
     }
 
     public void PlayClearPulse(Color effectColor, float duration = 0.22f)
     {
+        PlayClearPulse(effectColor, duration, 0f);
+    }
+
+    public void PlayClearPulse(Color effectColor, float duration, float delay)
+    {
         StopVisualAnimation();
         SetPreviewGlow(false, Color.clear);
         gameObject.SetActive(true);
-        visualAnimation = StartCoroutine(ClearPulse(effectColor, duration));
+        visualAnimation = StartCoroutine(ClearPulse(effectColor, duration, delay));
     }
 
-    private IEnumerator PlacementPulse(float duration)
+    /// <summary>Staggers the end-of-run fall using unscaled time so it still animates while gameplay is paused.</summary>
+    public void PlayGameOverFall(float delay)
     {
+        StopVisualAnimation();
+        SetPreviewGlow(false, Color.clear);
+        visualAnimation = StartCoroutine(GameOverFall(delay));
+    }
+
+    /// <summary>Brief hot-color flash used to announce Fever across occupied cells.</summary>
+    public void PlayFeverPulse(Color feverColor, float duration = 0.36f)
+    {
+        StopVisualAnimation();
+        gameObject.SetActive(true);
+        visualAnimation = StartCoroutine(FeverPulse(feverColor, duration));
+    }
+
+    private IEnumerator PlacementPulse(float duration, float delay)
+    {
+        if (delay > 0f)
+            yield return new WaitForSeconds(delay);
+
         duration = Mathf.Max(0.05f, duration);
         spriteRenderer.sprite = normal;
 
@@ -139,8 +176,11 @@ public class Cell : MonoBehaviour
         visualAnimation = null;
     }
 
-    private IEnumerator ClearPulse(Color effectColor, float duration)
+    private IEnumerator ClearPulse(Color effectColor, float duration, float delay)
     {
+        if (delay > 0f)
+            yield return new WaitForSeconds(delay);
+
         duration = Mathf.Max(0.08f, duration);
         spriteRenderer.sprite = highlight;
 
@@ -166,6 +206,66 @@ public class Cell : MonoBehaviour
         visualAnimation = null;
         transform.localScale = restingScale;
         gameObject.SetActive(false);
+    }
+
+    private IEnumerator GameOverFall(float delay)
+    {
+        float wait = Mathf.Max(0f, delay);
+        while (wait > 0f)
+        {
+            wait -= Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        Color startColor = spriteRenderer.color;
+        Vector3 startPosition = transform.localPosition;
+        Vector3 startScale = transform.localScale;
+        float elapsed = 0f;
+        const float duration = 0.28f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = t * t;
+            transform.localPosition = startPosition + Vector3.down * (0.22f * eased);
+            transform.localScale = Vector3.Lerp(startScale, startScale * 0.72f, eased);
+            spriteRenderer.color = Color.Lerp(startColor, new Color(0.12f, 0.14f, 0.2f, 0.4f), eased);
+            if (depthRenderer != null)
+                depthRenderer.color = Color.Lerp(depthRenderer.color, new Color(0.05f, 0.06f, 0.1f, 0.2f), eased);
+            yield return null;
+        }
+
+        visualAnimation = null;
+    }
+
+    private IEnumerator RippleFlash(Color rippleColor, float delay)
+    {
+        if (delay > 0f)
+            yield return new WaitForSeconds(delay);
+
+        SetPreviewGlow(true, rippleColor);
+        yield return new WaitForSeconds(0.18f);
+        SetPreviewGlow(false, Color.clear);
+        visualAnimation = null;
+    }
+
+    private IEnumerator FeverPulse(Color feverColor, float duration)
+    {
+        Color normalColor = Opaque(baseColor);
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float pulse = Mathf.Sin(t * Mathf.PI);
+            spriteRenderer.color = Color.Lerp(normalColor, feverColor, pulse * 0.82f);
+            transform.localScale = restingScale * (1f + pulse * 0.09f);
+            yield return null;
+        }
+
+        transform.localScale = restingScale;
+        spriteRenderer.color = normalColor;
+        visualAnimation = null;
     }
 
     private void StopVisualAnimation()

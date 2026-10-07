@@ -6,6 +6,8 @@ public class SettingUI : MonoBehaviour
 {
     [SerializeField] private GameObject panel_;
 
+    private AudioManager audioManager;
+
     private bool isOpen = false;
 
     public  Slider musicSilder, soundSilder;
@@ -22,8 +24,40 @@ public class SettingUI : MonoBehaviour
     }
     private void Start()
     {
-        AudioManager._instance.musicSource.volume = musicSilder.value;
-        AudioManager._instance.sfxSource.volume = soundSilder.value;
+        audioManager = AudioManager.Instance;
+        if (audioManager == null)
+        {
+            Debug.LogError("SettingUI could not find the persistent AudioManager.", this);
+            return;
+        }
+
+        // The scene's serialized slider events point at its scene AudioManager,
+        // which is discarded when the persistent singleton survives a replay.
+        // Rebind at runtime to the live manager and preserve its current volume.
+        if (musicSilder != null)
+        {
+            if (audioManager.musicSource != null)
+                musicSilder.SetValueWithoutNotify(audioManager.musicSource.volume);
+            musicSilder.onValueChanged.AddListener(audioManager.VolumeMusic);
+        }
+
+        if (soundSilder != null)
+        {
+            if (audioManager.sfxSource != null)
+                soundSilder.SetValueWithoutNotify(audioManager.sfxSource.volume);
+            soundSilder.onValueChanged.AddListener(audioManager.VolumeSound);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (audioManager == null)
+            return;
+
+        if (musicSilder != null)
+            musicSilder.onValueChanged.RemoveListener(audioManager.VolumeMusic);
+        if (soundSilder != null)
+            soundSilder.onValueChanged.RemoveListener(audioManager.VolumeSound);
     }
     public void ActivePanelSetting()
     {
@@ -41,7 +75,7 @@ public class SettingUI : MonoBehaviour
     public void RestartGame()
     {
         
-        GameFlowManager._instance.RestartGame();
+        GameFlowManager._instance?.RestartGame();
         panel_?.SetActive(false);
 
     }

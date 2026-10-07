@@ -8,7 +8,7 @@ public sealed class ModernBackground : MonoBehaviour
     [SerializeField] private Sprite backgroundSprite;
 
     [Header("Scene Objects")]
-    [Tooltip("Persistent scene renderer. Keep it as a child of the camera.")]
+    [Tooltip("Persistent scene renderer. Keep it as a child of the camera. Its Transform scale is kept as an X/Y multiplier over the camera-fit size, so you can resize Modern Background Art in the Hierarchy/Inspector.")]
     [SerializeField] private SpriteRenderer backgroundRenderer;
 
     [Tooltip("Persistent scene object that owns the falling-light Particle System.")]
@@ -26,6 +26,7 @@ public sealed class ModernBackground : MonoBehaviour
     private Camera targetCamera;
     private Transform backgroundTransform;
     private Vector3 backgroundBaseScale = Vector3.one;
+    private Vector3 authoredBackgroundScale = Vector3.one;
     private ParticleSystem fallingLights;
     private ParticleSystem floatingDiamonds;
     private float previousViewWidth = -1f;
@@ -37,6 +38,9 @@ public sealed class ModernBackground : MonoBehaviour
         targetCamera.backgroundColor = new Color(0.008f, 0.016f, 0.07f, 1f);
 
         CreateBackground();
+        if (backgroundTransform != null)
+            authoredBackgroundScale = backgroundTransform.localScale;
+
         fallingLights = CreateFallingLights();
         floatingDiamonds = CreateFloatingDiamonds();
         UpdateLayout(true);
@@ -397,7 +401,9 @@ public sealed class ModernBackground : MonoBehaviour
             var scale = Mathf.Max(
                 (viewWidth + driftAmount * 4f) / spriteSize.x,
                 (viewHeight + driftAmount * 4f) / spriteSize.y);
-            backgroundBaseScale = Vector3.one * scale * 1.02f;
+            backgroundBaseScale = Vector3.Scale(
+                Vector3.one * scale * 1.02f,
+                authoredBackgroundScale);
         }
 
         if (fallingLights != null)

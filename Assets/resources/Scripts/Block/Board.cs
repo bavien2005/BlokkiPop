@@ -42,11 +42,22 @@ public class Board : MonoBehaviour
     private readonly List<Vector2Int> previousHoverPoints = new();
 
 
-    [Header("Coin")]
-    [SerializeField] private int valueScore; 
+    [Header("Scoring")]
+    [Tooltip("Points awarded for each placed cell. This rewards useful large pieces even when they do not clear a line immediately.")]
+    [SerializeField, Min(0)] private int placementScorePerCell = 3;
+
+    [Tooltip("Base points per cleared line. Multi-line clears scale by the square of the number of lines cleared in one move (for example, 2 lines = 4x this value).")]
+    [SerializeField, Min(1)] private int valueScore = 40;
+
+    [Tooltip("Extra score multiplier added for each consecutive clear move in the combo chain.")]
+    [SerializeField, Range(0f, 0.5f)] private float comboScoreBonusPerChain = 0.12f;
+
+    [Tooltip("Upper limit for the score multiplier from a long combo chain.")]
+    [SerializeField, Min(1f)] private float maxComboScoreMultiplier = 2.5f;
 
 
-
+    [Header("Effects Shake Camera")]
+    [SerializeField] private float duration, magnitude;
     void Start()
     {
         for (var r = 0; r < Size; r++)
@@ -65,12 +76,6 @@ public class Board : MonoBehaviour
                 cells[r, c].Hide();
             }
         }
-    }
-
-  
-    void Update()
-    {
-        
     }
 
     public void Hover(Vector2Int point , int polyominoIndex , int colorId)
@@ -105,6 +110,39 @@ public class Board : MonoBehaviour
         else
         {
             previousHoverPoints.Clear();
+        }
+    }
+
+    /// <summary>Darkens occupied cells in a staggered collapse; returned time is the panel delay.</summary>
+    public float PlayGameOverSequence()
+    {
+        const float rowStagger = 0.055f;
+        const float fallDuration = 0.28f;
+        for (int row = 0; row < Size; ++row)
+        {
+            for (int column = 0; column < Size; ++column)
+            {
+                if (data[row, column] != 2 || cells[row, column] == null)
+                    continue;
+
+                // The collapse rolls upward across the board, then the result card appears.
+                float delay = (Size - 1 - row) * rowStagger + column * 0.008f;
+                cells[row, column].PlayGameOverFall(delay);
+            }
+        }
+
+        return (Size - 1) * rowStagger + (Size - 1) * 0.008f + fallDuration;
+    }
+
+    public void PlayFeverPulse(Color feverColor)
+    {
+        for (int row = 0; row < Size; ++row)
+        {
+            for (int column = 0; column < Size; ++column)
+            {
+                if (data[row, column] == 2 && cells[row, column] != null)
+                    cells[row, column].PlayFeverPulse(feverColor);
+            }
         }
     }
 
@@ -222,8 +260,15 @@ public class Board : MonoBehaviour
     private void Place(Vector2Int point , int polyominoColums, int polyominoRows, int colorId)
     {
         Color color = colorPalette.GetColor(colorId);
+        int placedCellCount = hoverPoints.Count;
+        List<Vector2Int> placedPoints = new(hoverPoints);
+        Vector2 placedCenter = Vector2.zero;
+        foreach (Vector2Int pointOnBoard in placedPoints)
+            placedCenter += (Vector2)pointOnBoard + Vector2.one * 0.5f;
+        if (placedPoints.Count > 0)
+            placedCenter /= placedPoints.Count;
 
-        foreach (var hoverPoint in hoverPoints)
+        foreach (var hoverPoint in placedPoints)
         {
             int r = hoverPoint.y;
             int c = hoverPoint.x;
@@ -236,10 +281,26 @@ public class Board : MonoBehaviour
 
             cells[r, c].Normal();
             cells[r, c].PlayPlacementPulse(
-                boardEffects != null ? boardEffects.PlacementPulseDuration : 0.16f);
+                boardEffects != null ? boardEffects.PlacementPulseDuration : 0.16f,
+                Vector2.Distance((Vector2)hoverPoint + Vector2.one * 0.5f, placedCenter) * 0.024f);
         }
 
-        boardEffects?.PlayPlacement(hoverPoints, color);
+        boardEffects?.PlayPlacement(placedPoints, color);
+        PlayNeighboringCellRipple(placedPoints, color);
+
+        if (placedCellCount > 0)
+        {
+            GameFlowManager._instance?.AddCoin(placementScorePerCell * placedCellCount);
+            for (int i = 0; i < placedPoints.Count; ++i)
+            {
+                Vector2Int pointOnBoard = placedPoints[i];
+                boardEffects?.PlayScoreReward(
+                    placementScorePerCell,
+                    new Vector3(pointOnBoard.x + 0.5f, pointOnBoard.y + 0.5f, transform.position.z - 0.2f),
+                    color,
+                    i * 0.035f);
+            }
+        }
 
         ClearFullLines(
             point,
@@ -248,6 +309,33 @@ public class Board : MonoBehaviour
         );
 
         hoverPoints.Clear();
+    }
+
+    private void PlayNeighboringCellRipple(IReadOnlyList<Vector2Int> placedPoints, Color blockColor)
+    {
+        HashSet<Vector2Int> placedSet = new(placedPoints);
+        HashSet<Vector2Int> pulsed = new();
+        for (int ring = 1; ring <= 2; ++ring)
+        {
+            foreach (Vector2Int origin in placedPoints)
+            {
+                for (int dx = -ring; dx <= ring; ++dx)
+                {
+                    int dyMagnitude = ring - Mathf.Abs(dx);
+                    for (int sign = -1; sign <= 1; sign += 2)
+                    {
+                        Vector2Int neighbor = origin + new Vector2Int(dx, dyMagnitude * sign);
+                        if (neighbor.x < 0 || neighbor.x >= Size || neighbor.y < 0 || neighbor.y >= Size ||
+                            placedSet.Contains(neighbor) || !pulsed.Add(neighbor) || data[neighbor.y, neighbor.x] != 2)
+                            continue;
+
+                        cells[neighbor.y, neighbor.x].PlayRippleFlash(
+                            Color.Lerp(blockColor, Color.white, 0.45f),
+                            ring * 0.045f);
+                    }
+                }
+            }
+        }
     }
 
     private void ClearFullLines(Vector2Int point , int polyominoColums , int polyominoRows)
@@ -264,34 +352,34 @@ public class Board : MonoBehaviour
                 ? boardEffects.RegisterClear(clearedLineCount)
                 : new ComboClearResult(1, clearedLineCount, false);
 
-            int rd = UnityEngine.Random.Range(0, 2);
-            if (rd == 0)
-            {
-                AudioManager.Instance.PlaySFX("Success");
-            }
+            GameFlowManager._instance?.RegisterClear(clearedLineCount, comboResult.ComboCount);
 
-            else 
-            {
-                AudioManager.Instance.PlaySFX("Success1");
-            }
-            if(fullLineColums.Count >= 1)
-            {
-                GameFlowManager._instance.AddCoin(valueScore * fullLineColums.Count);
-            }
+            int comboExtra = Mathf.Max(0, comboResult.ComboCount - 1);
+            float comboMultiplier = Mathf.Min(
+                maxComboScoreMultiplier,
+                1f + comboExtra * comboScoreBonusPerChain);
+            int clearScore = Mathf.RoundToInt(
+                valueScore * clearedLineCount * clearedLineCount * comboMultiplier);
+            GameFlowManager._instance?.AddCoin(clearScore);
 
-            if (fullLineRows.Count >= 1)
-            {
-                GameFlowManager._instance.AddCoin(valueScore * fullLineRows.Count);
-            }
+            Vector3 rewardOrigin = GetClearRewardOrigin();
+            boardEffects?.PlayScoreReward(clearScore, rewardOrigin, lineClearEffectColor);
 
             comboPopup?.Show(comboResult);
             
-                boardEffects?.PlayLineClear(
-                    fullLineRows,
-                    fullLineColums,
-                    lineClearEffectColor);
-           
-            
+            boardEffects?.PlayLineClear(
+                fullLineRows,
+                fullLineColums,
+                lineClearEffectColor,
+                clearedLineCount,
+                comboResult.FeverStarted);
+
+            AudioManager.Instance?.PlayClearCue(
+                clearedLineCount,
+                comboResult.ComboCount,
+                comboResult.FeverStarted);
+
+            CameraShake.instance.ShackCamera(duration, magnitude);
         }
         else
         {
@@ -300,6 +388,29 @@ public class Board : MonoBehaviour
 
         ClearFullLineColums();
         ClearFullLineRows();
+
+        boardEffects?.NotifyValidMove();
+        boardEffects?.SetDangerLevel(BoardSimulation.Analyze(CreateOccupancySnapshot()).Danger);
+    }
+
+    private Vector3 GetClearRewardOrigin()
+    {
+        Vector2 center = Vector2.zero;
+        int pointCount = 0;
+        foreach (int row in fullLineRows)
+        {
+            center += new Vector2((Size - 1) * 0.5f, row);
+            pointCount++;
+        }
+        foreach (int column in fullLineColums)
+        {
+            center += new Vector2(column, (Size - 1) * 0.5f);
+            pointCount++;
+        }
+
+        if (pointCount > 0)
+            center /= pointCount;
+        return new Vector3(center.x + 0.5f, center.y + 0.5f, transform.position.z - 0.2f);
     }
 
     private void FullLineColums(int fromColumn , int toColumnExclusive) 
@@ -365,7 +476,10 @@ public class Board : MonoBehaviour
 
                 cells[r, c].PlayClearPulse(
                     lineClearEffectColor,
-                    boardEffects != null ? boardEffects.CellClearDuration : 0.22f);
+                    boardEffects != null ? boardEffects.CellClearDuration : 0.22f,
+                    boardEffects != null
+                        ? boardEffects.GetClearWaveDelay(new Vector2Int(c, r), fullLineRows, fullLineColums)
+                        : 0f);
             }
         }
     }
@@ -382,7 +496,10 @@ public class Board : MonoBehaviour
 
                 cells[r, c].PlayClearPulse(
                     lineClearEffectColor,
-                    boardEffects != null ? boardEffects.CellClearDuration : 0.22f);
+                    boardEffects != null ? boardEffects.CellClearDuration : 0.22f,
+                    boardEffects != null
+                        ? boardEffects.GetClearWaveDelay(new Vector2Int(c, r), fullLineRows, fullLineColums)
+                        : 0f);
             }
         }
     }
@@ -581,6 +698,25 @@ public class Board : MonoBehaviour
     public float ComboDifficultyBonus => boardEffects != null
         ? boardEffects.GenerationDifficultyBonus
         : 0f;
+
+    /// <summary>Local origin shared by cells and the visual 8 x 8 grid.</summary>
+    public Transform CellContainer => cellsTramsform;
+
+    /// <summary>
+    /// Returns only the occupied cells. The smart tray generator uses this copy
+    /// for simulations, so it never changes the real board while thinking.
+    /// </summary>
+    public bool[,] CreateOccupancySnapshot()
+    {
+        bool[,] snapshot = new bool[Size, Size];
+        for (int row = 0; row < Size; ++row)
+        {
+            for (int column = 0; column < Size; ++column)
+                snapshot[row, column] = data[row, column] == 2;
+        }
+
+        return snapshot;
+    }
 
     private bool CheckPlace(int co , int ro , int polyominoColums , int polyominoRows , int[,] polyomino)
     {
