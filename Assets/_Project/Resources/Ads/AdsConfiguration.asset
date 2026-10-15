@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46740aacbad140149f8ed7fb7f42c9ce, type: 3}
+  m_Name: AdsConfiguration
+  m_EditorClassIdentifier: 
+  useTestAds: 1
+  liveAdsComplianceApproved: 0
+  enableDevelopmentRewardSimulation: 0
+  useConfiguredMediationTestUnitInDevelopment: 0
+  androidAppId: ca-app-pub-1158986668295280~1535263235
+  androidRewardedAdUnitId: ca-app-pub-1158986668295280/3969854887
+  privacyPolicyUrl: 
+  testDeviceIds: []
+  minimumLoadRetrySeconds: 15
+  maximumLoadRetries: 4
+  rewardedExpiryMinutes: 50
+  requestTimeoutSeconds: 45
