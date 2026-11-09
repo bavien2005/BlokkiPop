@@ -259,13 +259,13 @@ public class Block : MonoBehaviour
     {
         if (previouMousePosition == Vector3.positiveInfinity) return;
         previouMousePosition = Vector3.positiveInfinity; transform.localPosition = position; transform.localScale = scale;
-        board?.CancelPlacementPreview();
+        if (board != null) board.CancelPlacementPreview();
     }
 
     private void OnApplicationPause(bool paused) { if (paused) CancelPointerDrag(); }
     private void OnDisable() { CancelPointerDrag(); }
 
-    private static bool InputBlocked => Time.timeScale <= 0f || AdsPrivacyPanel.IsModalOpen || PopGameplayUI.IsModalOpen ||
+    private static bool InputBlocked => Time.timeScale <= 0f || PopGameplaySession.Instance != null && PopGameplaySession.Instance.IsTransitioning || AdsPrivacyPanel.IsModalOpen || PopGameplayUI.IsModalOpen ||
         (AdsService.Instance != null && AdsService.Instance.IsShowing) ||
         (GameFlowManager._instance != null && GameFlowManager._instance.IsGameOver);
 

@@ -31,6 +31,7 @@ public sealed class PopJourneyHomeView : MonoBehaviour
     public string journeyHint = "Chinh phục màn tiếp theo";
     public string continueClassic = "Tiếp tục ván Classic";
     public string classicLabel = "CLASSIC", dailyLabel = "DAILY", rewardsLabel = "GIAO DIỆN";
+    public string practiceLabel = "BÀI LUYỆN";
     public string learnLabel = "Hướng dẫn chơi", privacyLabel = "Quyền riêng tư";
     [Header("Progress colors")]
     public Color completeColor = new(.05f,.24f,.32f), currentColor = new(1f,.85f,.36f), lockedColor = new(.05f,.24f,.32f);
@@ -54,6 +55,21 @@ public sealed class PopJourneyHomeView : MonoBehaviour
         if(savedIndex>=0&&session.LevelUnlocked(savedIndex))SuggestedLevel=savedIndex;
         if(stars!=null)stars.text=session.TotalJourneyStars.ToString();
         if(journeySubtitle!=null)journeySubtitle.text=journeyHint;
+        if(session.Configuration.endless.replaceJourneyHomeButton)
+        {
+            PopRunSnapshot endless=session.SavedRun(PopGameMode.EndlessPop);
+            int current=endless!=null?endless.endlessWave-1:session.Progress.endlessBestWave;
+            int first=Mathf.Max(0,current-2);
+            if(nodes!=null)for(int i=0;i<nodes.Length;i++)
+            {
+                Node node=nodes[i];int index=first+i;bool active=index==current,done=index<current;
+                node.levelIndex=index;node.button.gameObject.SetActive(true);node.button.interactable=done||active;
+                if(node.button.targetGraphic!=null)node.button.targetGraphic.color=active?currentColor:done?completeColor:lockedColor;
+                node.star.gameObject.SetActive(done);node.play.gameObject.SetActive(active);node.locked.gameObject.SetActive(!done&&!active);node.ring.gameObject.SetActive(active);
+                node.play.color=ink;node.star.color=white;node.locked.color=white;
+            }
+            RefreshSettings();return;
+        }
         int start=Mathf.Clamp(SuggestedLevel-2,0,Mathf.Max(0,count-(nodes?.Length??0)));
         if(nodes!=null)for(int i=0;i<nodes.Length;i++)
         {

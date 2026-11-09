@@ -29,6 +29,7 @@ How long can you keep the board clear? Place your next block and find out.
 - Review every feature claim against the final release build.
 - Confirm the app category, age/content rating, target audience, and ads declaration in Play Console.
 - Complete Data safety based on the final app and every included SDK. Unity Analytics and Unity Services are disabled in the current project settings; re-check if SDKs are added later.
-- Add a public HTTPS privacy-policy URL and a monitored support email before submitting.
+- Privacy policy: https://blokki-pop-vien-privacy.berrydog4.chatgpt.site
+- Confirm the support email is monitored before submitting.
 - Replace the screenshot checklist with genuine, uncropped screenshots from the final release build.
 - After Unity imports the icon PNGs, run `Tools > Blokki Pop > Apply App Icons` once to assign Android legacy/adaptive and iOS app icons in Player Settings.

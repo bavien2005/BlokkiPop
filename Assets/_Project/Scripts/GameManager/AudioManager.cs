@@ -29,6 +29,7 @@ public class AudioManager : MonoBehaviour
     private AudioClip invalidDropTone;
     private AudioClip clearTone;
     private AudioClip bigClearTone;
+    private AudioClip bubblePopTone, bubbleChainTone, popWaveTone;
     private AudioSource voiceSource;
     private float nextVoiceAt;
 
@@ -57,6 +58,9 @@ public class AudioManager : MonoBehaviour
         if (invalidDropTone != null) Destroy(invalidDropTone);
         if (clearTone != null) Destroy(clearTone);
         if (bigClearTone != null) Destroy(bigClearTone);
+        if (bubblePopTone != null) Destroy(bubblePopTone);
+        if (bubbleChainTone != null) Destroy(bubbleChainTone);
+        if (popWaveTone != null) Destroy(popWaveTone);
     }
     public void ClockMusic()
     {
@@ -111,6 +115,9 @@ public class AudioManager : MonoBehaviour
     {
         PlayGeneratedTone(invalidDropTone, 0.65f);
     }
+
+    public void PlayBubblePopCue(int bubbles, float gain) => PlayGeneratedTone(bubbles > 1 ? bubbleChainTone : bubblePopTone, Mathf.Clamp01(gain));
+    public void PlayPopWaveCue(float gain) => PlayGeneratedTone(popWaveTone, Mathf.Clamp01(gain));
 
     /// <summary>Layers a rising arcade chime and an English male callout onto a successful clear.</summary>
     public void PlayClearCue(int clearedLines, int combo, bool feverStarted)
@@ -185,6 +192,9 @@ public class AudioManager : MonoBehaviour
         invalidDropTone = CreateTone("Invalid Drop", new[] { 135f, 92f }, 0.16f, 0.28f);
         clearTone = CreateTone("Line Clear", new[] { 740f, 990f, 1320f }, 0.24f, 0.20f);
         bigClearTone = CreateTone("Big Clear", new[] { 523f, 784f, 1047f, 1568f }, 0.42f, 0.23f);
+        bubblePopTone = CreateTone("Bubble Pop", new[] { 1047f, 1568f }, .13f, .16f);
+        bubbleChainTone = CreateTone("Bubble Chain", new[] { 784f, 1047f, 1319f, 1568f }, .24f, .17f);
+        popWaveTone = CreateTone("Pop Wave Complete", new[] { 523f, 659f, 784f, 1047f }, .34f, .17f);
     }
 
     private static AudioClip CreateTone(string clipName, float[] notes, float duration, float amplitude)

@@ -155,6 +155,23 @@ public static class PopLevelCatalog
         return level;
     }
 
+    public static PopLevelDefinition CreateEndlessLesson()
+    {
+        var lesson = new PopLevelDefinition { id = "endless-lesson-v1", title = "HỌC PHÁ BÓNG", targetLines = 0,
+            moveLimit = 4, threeStarMoves = 4, twoStarMoves = 4 };
+        for (int x = 0; x < Board.Size; ++x)
+        {
+            if (x != 2) Add(lesson, x, 1, x == 0);
+            if (x < 2 || x > 4) Add(lesson, x, 3, x == 0);
+            if (x < 3 || x > 4) { Add(lesson, x, 5, x == 0); Add(lesson, x, 6, x == 0); }
+        }
+        Move(lesson, new[,] { { 1 } }, 2, 1);
+        Move(lesson, new[,] { { 1, 1, 1 } }, 2, 3);
+        Move(lesson, new[,] { { 1 }, { 1 } }, 3, 5);
+        Move(lesson, new[,] { { 1 }, { 1 } }, 4, 5);
+        CountBubbles(lesson); return lesson;
+    }
+
     private static PopLevelDefinition Tutorial()
     {
         var lesson = new PopLevelDefinition { id = "tutorial-v1", title = "Learn to Pop", targetLines = 4, moveLimit = 3,

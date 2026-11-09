@@ -5,7 +5,7 @@ using UnityEngine.SceneManagement;
 
 /// <summary>One mode/progression owner. Counters and saves are committed after a whole placement/tray transaction.</summary>
 [DefaultExecutionOrder(-950)]
-public sealed class PopGameplaySession : MonoBehaviour
+public sealed partial class PopGameplaySession : MonoBehaviour
 {
     public static PopGameplaySession Instance { get; private set; }
     public event Action Changed;
@@ -65,7 +65,7 @@ public sealed class PopGameplaySession : MonoBehaviour
             return sum;
         }
     }
-    public PopThemeDefinition SelectedTheme => configuration.FindTheme(store.Progress.selectedTheme) ?? configuration.themes[0];
+    public PopThemeDefinition SelectedTheme => UsesAutomaticBackgrounds ? configuration.themes[0] : configuration.FindTheme(store.Progress.selectedTheme) ?? configuration.themes[0];
     public PopEffectDefinition SelectedEffect => configuration.FindEffect(store.Progress.selectedEffect) ?? configuration.popEffects[0];
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -92,6 +92,7 @@ public sealed class PopGameplaySession : MonoBehaviour
 
     private void Update()
     {
+        TickEndlessTransition();
         if (Time.unscaledTime < nextFlush) return;
         nextFlush = Time.unscaledTime + Mathf.Max(0.25f, configuration.runs.diskFlushIntervalSeconds);
         store.Flush();
@@ -114,6 +115,7 @@ public sealed class PopGameplaySession : MonoBehaviour
 
     public void SelectTheme(string id)
     {
+        if (UsesAutomaticBackgrounds) return; // Old selection remains saved, but no longer owns the run's background.
         PopThemeDefinition theme = configuration.FindTheme(id);
         if (!ThemeUnlocked(theme)) return;
         store.Progress.selectedTheme = id;
@@ -134,11 +136,13 @@ public sealed class PopGameplaySession : MonoBehaviour
     public PopRunSnapshot SavedRun(PopGameMode wantedMode)
     {
         if (wantedMode == PopGameMode.Tutorial || wantedMode == PopGameMode.Classic && !configuration.runs.resumeClassic ||
-            wantedMode == PopGameMode.Journey && !configuration.runs.resumeJourney || wantedMode == PopGameMode.Daily && !configuration.runs.resumeDaily)
+            wantedMode == PopGameMode.Journey && !configuration.runs.resumeJourney || wantedMode == PopGameMode.Daily && !configuration.runs.resumeDaily ||
+            wantedMode == PopGameMode.EndlessPop && !configuration.endless.resumeRun)
             return null;
         PopRunSnapshot run = store.LoadRun(wantedMode);
         if (run == null || run.contentRevision != configuration.contentRevision) return null;
         if (wantedMode == PopGameMode.Journey && configuration.FindLevel(run.levelId) == null) return null;
+        if (wantedMode == PopGameMode.EndlessPop && run.endlessRevision != configuration.endless.generatorRevision) return null;
         if (wantedMode == PopGameMode.Daily && (run.utcDate != UtcToday || run.dailyRevision != configuration.daily.scheduleRevision ||
             configuration.DailyFor(run.utcDate)?.id != run.levelId)) return null;
         return run;
@@ -178,7 +182,7 @@ public sealed class PopGameplaySession : MonoBehaviour
         SaveBeforeNavigation();
         pendingMode = wantedMode; pendingLevel = wantedLevel; pendingDate = wantedDate;
         pendingSnapshot = resume ? SavedRun(wantedMode) : null;
-        if (pendingSnapshot != null && wantedMode != PopGameMode.Classic && pendingSnapshot.levelId != wantedLevel) pendingSnapshot = null;
+        if (pendingSnapshot != null && wantedMode != PopGameMode.Classic && wantedMode != PopGameMode.EndlessPop && pendingSnapshot.levelId != wantedLevel) pendingSnapshot = null;
         pendingResume = pendingSnapshot != null;
         pendingRestoreFailed = resume && !pendingResume;
         hasPending = true;
@@ -210,10 +214,13 @@ public sealed class PopGameplaySession : MonoBehaviour
         mode = hasPending ? pendingMode : PopGameMode.Classic;
         levelId = hasPending ? pendingLevel : "";
         date = hasPending ? pendingDate : "";
-        definition = mode == PopGameMode.Tutorial ? configuration.tutorial.lesson : configuration.FindLevel(levelId);
-        if (IsAuthored && definition == null) { mode = PopGameMode.Classic; levelId = date = ""; }
+        definition = mode == PopGameMode.EndlessPop ? pendingSnapshot?.endlessDefinition : mode == PopGameMode.Tutorial
+            ? levelId == configuration.tutorial.endlessLesson.id ? configuration.tutorial.endlessLesson : configuration.tutorial.lesson : configuration.FindLevel(levelId);
+        if (IsAuthored && definition == null && mode != PopGameMode.EndlessPop) { mode = PopGameMode.Classic; levelId = date = ""; }
         moves = lines = bubblesPopped = maxCombo = largestClear = deckCursor = 0;
         finished = placementPending = false;
+        endlessPendingWave = false;
+        if (mode != PopGameMode.EndlessPop) waveStartMoves = waveStartBubbles = 0;
         newlyUnlockedThemes.Clear(); newlyUnlockedEffects.Clear(); DailyTrophyEarned = false;
         board.ApplyRunConfiguration(configuration, IsAuthored);
         tray.InitializeGenerator(configuration.runs.classicFixedSeed != 0
@@ -221,6 +228,7 @@ public sealed class PopGameplaySession : MonoBehaviour
         active = true;
         ApplyTheme();
         bool restored = false;
+        PopAmbientRunState restoredAmbience = null;
         if (pendingResume && pendingSnapshot != null)
         {
             PopRunSnapshot saved = pendingSnapshot;
@@ -230,6 +238,8 @@ public sealed class PopGameplaySession : MonoBehaviour
                 maxCombo = saved.maxCombo; largestClear = saved.largestClear; deckCursor = saved.deckCursor;
                 board.Import(saved); tray.Import(saved);
                 GameFlowManager._instance?.RestoreRun(saved.score, saved.lines, saved.maxCombo, saved.reviveUsed);
+                restoredAmbience = saved.ambience;
+                if (mode == PopGameMode.EndlessPop) RestoreEndless(saved);
                 restored = true;
             }
             else pendingRestoreFailed = true;
@@ -238,12 +248,14 @@ public sealed class PopGameplaySession : MonoBehaviour
         if (!restored)
         {
             GameFlowManager._instance?.RestoreRun(0, 0, 0, false);
-            if (IsAuthored) board.ApplyStartingCells(definition.startingCells);
+            if (mode == PopGameMode.EndlessPop) StartFreshEndless();
+            else if (IsAuthored) board.ApplyStartingCells(definition.startingCells);
             tray.DealNextTray();
         }
+        InitializeAmbience(restoredAmbience);
         Notify();
         SaveCurrentRun();
-        if (!tray.HasPlayablePiece) GameFlowManager._instance?.GameOver();
+        if (!IsTransitioning && !tray.HasPlayablePiece) GameFlowManager._instance?.GameOver();
     }
 
     public int[] TakeAuthoredTray()
@@ -257,7 +269,7 @@ public sealed class PopGameplaySession : MonoBehaviour
 
     public bool CanPlace(int shape, Vector2Int origin)
     {
-        if (active && finished) return false;
+        if (active && finished || IsTransitioning) return false;
         if (!IsActive || mode != PopGameMode.Tutorial) return true;
         if (moves >= definition.verifiedSolution.Count) return false;
         PopSolutionMove step = definition.verifiedSolution[moves];
@@ -286,6 +298,7 @@ public sealed class PopGameplaySession : MonoBehaviour
         if (!IsActive || !placementPending) return false;
         placementPending = false;
         Notify();
+        if (mode == PopGameMode.EndlessPop) return CompleteEndlessPlacement();
         if (IsAuthored)
         {
             int score = GameFlowManager._instance != null ? GameFlowManager._instance.Score : 0;
@@ -300,19 +313,22 @@ public sealed class PopGameplaySession : MonoBehaviour
     public void AfterTrayTransaction()
     {
         SaveCurrentRun();
+        if (IsEndless) store.Flush();
         Notify();
     }
 
     public void FinishWin()
     {
-        if (!IsActive || !IsAuthored) return;
+        if (!IsActive || !IsAuthored || IsEndless) return;
         finished = true;
+        EndAmbience();
         int score = GameFlowManager._instance != null ? GameFlowManager._instance.Score : 0;
         int stars = definition.StarsFor(moves);
-        var previouslyLocked = configuration.themes.FindAll(theme => !ThemeUnlocked(theme));
+        var previouslyLocked = configuration.themes.FindAll(theme => !UsesAutomaticBackgrounds && !ThemeUnlocked(theme));
         int previousDailyWins = DailyWins;
         if (mode == PopGameMode.Journey) PopSaveStore.RecordWin(store.Progress.journey, levelId, stars, moves, score);
         else if (mode == PopGameMode.Daily) PopSaveStore.RecordWin(store.Progress.daily, DailyRecordId(date), stars, moves, score);
+        else if (IsEndlessLesson) store.Progress.endlessTutorialComplete = true;
         else store.Progress.tutorialComplete = true;
         foreach (PopThemeDefinition theme in previouslyLocked) if (ThemeUnlocked(theme)) newlyUnlockedThemes.Add(theme.title);
         DailyTrophyEarned = DailyWins > previousDailyWins && DailyWins % Mathf.Max(1, configuration.daily.celebrationEveryWins) == 0;
@@ -324,12 +340,15 @@ public sealed class PopGameplaySession : MonoBehaviour
     {
         if (!IsActive) return;
         finished = true;
+        EndAmbience();
+        if (mode == PopGameMode.EndlessPop) RecordEndlessBest();
         store.ClearRun(mode); store.Flush(); Notify();
         if (IsAuthored) PopGameplayUI.Instance?.ShowOutcome(false, 0);
     }
 
     public void Retry()
     {
+        if (mode == PopGameMode.EndlessPop) { PlayEndless(false); return; }
         pendingMode = mode; pendingLevel = levelId; pendingDate = date;
         hasPending = true; pendingResume = pendingRestoreFailed = false; pendingSnapshot = null;
         GameFlowManager._instance?.RestartGame();
@@ -344,8 +363,11 @@ public sealed class PopGameplaySession : MonoBehaviour
 
     public void CompleteTutorial(bool skipped = false)
     {
+        if (mode != PopGameMode.Tutorial) return;
         if (skipped && !configuration.tutorial.allowSkip) return;
-        store.Progress.tutorialComplete = true; store.SaveProgress(); store.Flush();
+        if (IsEndlessLesson) store.Progress.endlessTutorialComplete = true;
+        else store.Progress.tutorialComplete = true;
+        store.SaveProgress(); store.Flush();
         if (hasAfterTutorial)
         {
             hasAfterTutorial = false;
@@ -356,6 +378,7 @@ public sealed class PopGameplaySession : MonoBehaviour
 
     public void GoHome()
     {
+        hasAfterTutorial = false;
         SaveBeforeNavigation();
         GameFlowManager._instance?.ReturnHome();
     }
@@ -371,12 +394,14 @@ public sealed class PopGameplaySession : MonoBehaviour
         string content = FormattableString.Invariant($"{configuration.contentRevision}/{mode}/{board.ScoringSignature}/{configuration.runs.timedCombo}/{configuration.runs.timedComboWindowSeconds:R}/{Polyominos.Lenght}");
         if (!IsAuthored) content += "/" + tray.GenerationSignature;
         if (IsAuthored) content += "/" + JsonUtility.ToJson(definition);
+        if (mode == PopGameMode.EndlessPop) content += "/" + configuration.endless.generatorRevision;
         return Hash128.Compute(content).ToString();
     }
 
     private bool AuthoredSnapshotIsConsistent(PopRunSnapshot saved)
     {
         if (!IsAuthored) return true;
+        if (mode == PopGameMode.EndlessPop) return PopEndlessGenerator.ValidSnapshot(saved);
         if (saved.moves >= definition.moveLimit || saved.deckCursor > definition.pieceSequence.Count || saved.reviveUsed ||
             saved.maxCombo > saved.moves || saved.combo > saved.moves || saved.largestClear > 16 || saved.lines > (long)saved.moves * 16) return false;
         int initialBubbles = definition.startingCells.FindAll(cell => cell.bubble).Count, remaining = 0;
@@ -388,7 +413,7 @@ public sealed class PopGameplaySession : MonoBehaviour
     {
         if (!IsActive || placementPending || board == null || tray == null || mode == PopGameMode.Tutorial) return;
         if (mode == PopGameMode.Classic && !configuration.runs.resumeClassic || mode == PopGameMode.Journey && !configuration.runs.resumeJourney ||
-            mode == PopGameMode.Daily && !configuration.runs.resumeDaily) return;
+            mode == PopGameMode.Daily && !configuration.runs.resumeDaily || mode == PopGameMode.EndlessPop && !configuration.endless.resumeRun) return;
         GameFlowManager manager = GameFlowManager._instance;
         if (manager == null) return;
         var snapshot = new PopRunSnapshot
@@ -401,6 +426,8 @@ public sealed class PopGameplaySession : MonoBehaviour
             trayShapes = new int[3], trayColors = new int[3], trayAvailable = new bool[3]
         };
         board.Export(snapshot); tray.Export(snapshot);
+        if (mode == PopGameMode.EndlessPop) ExportEndless(snapshot);
+        snapshot.ambience = UsesAutomaticBackgrounds ? ambience.Copy() : null;
         store.SaveRun(snapshot);
     }
 

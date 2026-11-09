@@ -30,6 +30,10 @@ public static class PopGameplayValidation
         if (Application.companyName != "BlokkiPopRegression" || !Application.dataPath.Replace('\\', '/').Contains("/.utmp/domain-reload-validation-20261009/"))
             throw new Exception("Refusing to run progression tests against the user's real project/preferences.");
         PopRuntimeFontSetup.Prepare();
+        // Keep exercising legacy save/theme compatibility separately. Automatic
+        // production backgrounds and retired-menu behavior have their own QA.
+        var ambient = AssetDatabase.LoadAssetAtPath<PopAmbientConfiguration>(PopAmbientConfiguration.AssetPath);
+        if (ambient != null) { ambient.enabled = false; EditorUtility.SetDirty(ambient); AssetDatabase.SaveAssets(); }
         Check(Resources.Load<TMPro.TMP_FontAsset>("Fonts & Materials/Bangers SDF") != null, "Runtime Bangers load path still works after excluding TMP samples");
         Check(!AssetDatabase.IsValidFolder("Assets/TextMesh Pro/Examples & Extras/Resources"), "Unused TMP sample materials are not runtime Resources");
         PopGameplaySetup.EnsureConfiguration();
@@ -37,7 +41,7 @@ public static class PopGameplayValidation
         Check(PopGameplaySetup.Validate(config, out string result), result);
         foreach (PopLevelDefinition level in config.journeyLevels) Check(PopLevelValidation.Validate(level, config.authoredScoring, out result), level.id + ": " + result);
         PureChecks(config);
-        PopSceneUIAuthoring.Install();
+        PopClassicUIAuthoring.Install(); PopSceneUIAuthoring.Install();
         string authoredExport = System.IO.Path.GetFullPath("../scene-ui-20261015/pristine-scenes");
         System.IO.Directory.CreateDirectory(authoredExport);
         foreach (string sceneName in new[] { "Home", "Game" })
@@ -99,7 +103,7 @@ public static class PopGameplayValidation
                     int classicGoalLabels = 0;
                     foreach (TMPro.TMP_Text label in Object.FindObjectsByType<TMPro.TMP_Text>(FindObjectsSortMode.None))
                         if (label.text == session.Configuration.text.classicDescription) ++classicGoalLabels;
-                    Check(classicGoalLabels == 1, "Exactly one visible Classic goal HUD; stale scene copy is preserved but disabled");
+                    Check(classicGoalLabels == (PopGameplayUI.Instance.HasClassicHUD ? 0 : 1), "Dedicated Classic HUD removes the old explanatory panel; no duplicate/stale goal text");
                     Check(session.Mode == PopGameMode.Classic && !AdsPrivacyPanel.IsModalOpen, "Play-first Classic without mandatory age prompt");
                     Check(!AdsService.Instance.HasStartedSdkInitialization, "Unknown age still cannot initialize ad SDK");
                     Check(Object.FindObjectsByType<PopGameplaySession>(FindObjectsSortMode.None).Length == 1, "Exactly one session");
@@ -408,7 +412,7 @@ public static class PopGameplayValidation
         Check(title.rect.anchoredPosition == new Vector2(-79, 44) && title.rect.sizeDelta == new Vector2(701, 43), "Authored HUD position and size survive Play and scene reload");
         Check(title.text.font == PopGameplaySession.Instance.Configuration.ui.bodyFont && Mathf.Approximately(title.text.fontSize, 31.25f) && !title.text.enableAutoSizing, "Authored HUD font, size and auto-size choice survive runtime binding");
         Check(title.text.color == new Color(.88f, .69f, .51f, 1), "Authored HUD color survives runtime binding");
-        Check(!ui.View(PopUIPage.Victory).gameObject.activeSelf && ui.View(PopUIPage.Hud).gameObject.activeSelf, "Edit-mode Victory preview cannot leak into actual game startup");
+        Check(!ui.View(PopUIPage.Victory).gameObject.activeSelf && (ui.HasClassicHUD ? ui.ClassicHUD.gameObject.activeSelf && !ui.View(PopUIPage.Hud).gameObject.activeSelf : ui.View(PopUIPage.Hud).gameObject.activeSelf), "Edit-mode Victory preview cannot leak into actual game startup; correct authored Classic HUD is visible");
     }
     private static void CapturePreview(string name) => ScreenCapture.CaptureScreenshot(Application.dataPath + "/../../progression-" + name + "-preview.png");
     private static void LogPointerDiagnostics()

@@ -40,7 +40,7 @@ public static class PopGameplaySetup
     {
         reason = "Missing configuration.";
         if (config == null || config.contentRevision < 1 || config.runs == null || config.ui == null || config.text == null ||
-            config.daily == null || config.tutorial == null || config.authoredScoring == null || config.journeyLevels == null ||
+            config.daily == null || config.endless == null || config.tutorial == null || config.authoredScoring == null || config.journeyLevels == null ||
             config.themes == null || config.themes.Count == 0 || config.popEffects == null || config.popEffects.Count == 0 || config.journeyLevels.Count == 0) return false;
         var ids = new HashSet<string>();
         BlockColorPalette palette = AssetDatabase.LoadAssetAtPath<BlockColorPalette>("Assets/_Project/ScriptableObjects/BlockColorPalette.asset");
@@ -52,6 +52,12 @@ public static class PopGameplaySetup
                 if (palette == null || cell.colorId >= palette.Count) { reason = level.id + ": color index not in BlockColorPalette."; return false; }
         }
         if (!PopLevelValidation.Validate(config.tutorial.lesson, config.authoredScoring, out reason)) { reason = "Tutorial: " + reason; return false; }
+        if (!PopLevelValidation.Validate(config.tutorial.endlessLesson, config.authoredScoring, out reason)) { reason = "Endless lesson: " + reason; return false; }
+        if (config.tutorial.endlessLesson.id == config.tutorial.lesson.id || config.tutorial.endlessInstructions == null ||
+            config.tutorial.endlessInstructions.Length < config.tutorial.endlessLesson.verifiedSolution.Count)
+        { reason = "Endless lesson needs a separate ID and an instruction for every placement."; return false; }
+        foreach (var cell in config.tutorial.endlessLesson.startingCells)
+            if (cell.colorId >= palette.Count) { reason = "Endless lesson uses an unknown color."; return false; }
         if (config.tutorial.stepInstructions == null || config.tutorial.stepInstructions.Length < config.tutorial.lesson.verifiedSolution.Count)
         { reason = "Tutorial needs an instruction for every verified placement."; return false; }
         foreach (PopStartingCell cell in config.tutorial.lesson.startingCells)
@@ -82,6 +88,15 @@ public static class PopGameplaySetup
             config.authoredScoring.placementPointsPerCell < 0 || config.authoredScoring.pointsPerLine < 1 || config.authoredScoring.maximumComboMultiplier < 1 ||
             config.authoredScoring.comboBonusPerChain < 0 || config.runs.timedComboWindowSeconds <= 0 || config.runs.feverStartCombo < 2)
         { reason = "Invalid UI, scoring, daily or combo settings."; return false; }
+        if (string.IsNullOrWhiteSpace(config.endless.generatorRevision) || config.endless.generatorRevision.Length > 128 ||
+            config.endless.minimumMoves < 3 || config.endless.minimumMoves > config.endless.maximumMoves || config.endless.maximumMoves < 7 || config.endless.maximumMoves > 9 ||
+            config.endless.candidateAttempts < 4 || config.endless.candidateAttempts > 64 || config.endless.wavesPerDifficultyStep < 1 ||
+            config.endless.minimumSlack < 0 || config.endless.minimumSlack > config.endless.startingSlack || config.endless.startingSlack < 1 || config.endless.startingSlack > 5 ||
+            config.endless.maximumTargetLanes < 1 || config.endless.maximumTargetLanes > 5 || config.endless.bubblesPerLane < 1 || config.endless.bubblesPerLane > 4 ||
+            config.endless.multiClearWeight < 0 || config.endless.multiClearWeight > 8 || config.endless.setupMoveWeight < 0 || config.endless.setupMoveWeight > 4 ||
+            config.endless.leftoverPocketPenalty < 0 || config.endless.leftoverPocketPenalty > 1 ||
+            config.endless.transitionSeconds < .35f || config.endless.transitionSeconds > 2f)
+        { reason = "Invalid Endless Pop revision, move limits, generation budget or difficulty settings."; return false; }
         reason = config.journeyLevels.Count + " Journey levels and tutorial have verified three-star wins; Daily/theme references are valid.";
         return true;
     }
@@ -108,6 +123,7 @@ public sealed class PopGameplayConfigurationEditor : Editor
         var config = (PopGameplayConfiguration)target;
         EditorGUILayout.HelpBox("Edit rules, UI and content below. Permanent IDs preserve records. Increment Content Revision after changing published layouts/decks/scoring. Validation replays a real fixed-deck solution before builds.", MessageType.Info);
         if (GUILayout.Button("Validate every level and tutorial")) PopGameplaySetup.ValidateMenu();
+        if (GUILayout.Button("Preview / paint / replay Endless Pop generator")) PopEndlessGeneratorPreview.Open();
         if (config.journeyLevels.Count > 0)
         {
             string[] choices = config.journeyLevels.ConvertAll(level => level == null ? "Missing" : level.id + " — " + level.title).ToArray();

@@ -289,6 +289,10 @@ public static class PopSceneUIAuthoring
     public static void Validate(PopGameplayUI ui, PopGameplayConfiguration configuration)
     {
         if (ui == null || ui.Views == null) throw new BuildFailedException("Authored UI is missing from the scene. Run Tools > Blokki Pop > UI > Install Authored UI.");
+        if (!ui.HasClassicHUD || ui.View(PopUIPage.Pause).GetComponent<PopPausePresentation>() is not { HasPresentation: true })
+            throw new BuildFailedException("Classic HUD/Pause bindings are missing. Run Tools > Blokki Pop > UI > Install Classic HUD and Pause Sheet.");
+        if (configuration.endless.replaceJourneyHomeButton && (ui.EndlessQueue == null || !ui.EndlessQueue.HasPresentation))
+            throw new BuildFailedException("Endless Pop needs its authored future-piece queue. Run Tools > Blokki Pop > UI > Install Endless Pop Preview.");
         foreach (PopUIPage page in Enum.GetValues(typeof(PopUIPage)))
         {
             PopUIView view = ui.View(page); var keys = new HashSet<string>();
@@ -366,7 +370,7 @@ public sealed class PopGameplayUIInspector : Editor
     public override void OnInspectorGUI()
     {
         EditorGUILayout.HelpBox("UI is saved in the scene/prefab. Choose Scene Preview below to edit any panel without Play. Select its child objects to adjust RectTransform, Image, TMP or Button. Runtime will not overwrite those styles.", MessageType.Info);
-        EditorGUILayout.HelpBox("Move Hud (or Hud/Card) to reposition only the gameplay bar. Moving Safe Area moves every page. Fit Device Safe Area drives only its anchors for cutouts; your position and size offsets are kept in preview and Play.", MessageType.Info);
+        EditorGUILayout.HelpBox("Scene Preview = Hud: turn Preview Endless HUD OFF for Classic Overlay > Gameplay Frame > Header / Stats; ON for Endless. Pause is a separate authored page. All layouts/styles are editable here, never rebuilt in Play. The camera reserves their actual bounds.", MessageType.Info);
         EditorGUI.BeginChangeCheck(); DrawDefaultInspector(); bool changed = EditorGUI.EndChangeCheck();
         PopGameplayUI ui = (PopGameplayUI)target;
         if (ui.Views == null || ui.Views.Count == 0)
@@ -374,11 +378,15 @@ public sealed class PopGameplayUIInspector : Editor
         if (!Application.isPlaying && (changed || GUILayout.Button("Show Selected Panel in Scene")))
         {
             foreach (PopUIView view in ui.Views) Undo.RecordObject(view.gameObject, "Preview authored UI");
+            if (ui.EndlessQueue != null) Undo.RecordObject(ui.EndlessQueue.gameObject, "Preview authored UI");
+            if (ui.ClassicHUD != null) Undo.RecordObject(ui.ClassicHUD.gameObject, "Preview authored UI");
             ui.PreviewScenePage(); SceneView.RepaintAll();
             foreach (PopUIView view in ui.Views) PrefabUtility.RecordPrefabInstancePropertyModifications(view.gameObject);
+            if (ui.EndlessQueue != null) PrefabUtility.RecordPrefabInstancePropertyModifications(ui.EndlessQueue.gameObject);
+            if (ui.ClassicHUD != null) PrefabUtility.RecordPrefabInstancePropertyModifications(ui.ClassicHUD.gameObject);
         }
         if (!Application.isPlaying && GUILayout.Button("Frame Visible Panel in Scene"))
-        { Selection.activeGameObject = ui.View(ui.ScenePreview).gameObject; SceneView.lastActiveSceneView?.FrameSelected(); }
+        { Selection.activeGameObject = ui.ScenePreview == PopUIPage.Hud && ui.ClassicHUD != null && ui.ClassicHUD.gameObject.activeSelf ? ui.ClassicHUD.gameObject : ui.ScenePreview == PopUIPage.Hud && ui.EndlessQueue != null && ui.EndlessQueue.gameObject.activeSelf ? ui.EndlessQueue.gameObject : ui.View(ui.ScenePreview).gameObject; SceneView.lastActiveSceneView?.FrameSelected(); }
         if (!Application.isPlaying && ui.ScenePreview == PopUIPage.Journey)
         {
             PopGameplayConfiguration data = AssetDatabase.LoadAssetAtPath<PopGameplayConfiguration>(PopGameplayConfiguration.AssetPath);
@@ -404,5 +412,20 @@ public sealed class PopSceneUIBuildGuard : IProcessSceneWithReport
         foreach (GameObject root in scene.GetRootGameObjects())
         { PopGameplayUI found = root.GetComponentInChildren<PopGameplayUI>(true); if (found == null || !root.activeSelf && root.name == "Legacy Runtime UI (preserved)") continue; if (ui != null) throw new BuildFailedException("Duplicate progression UI."); ui = found; }
         PopSceneUIAuthoring.Validate(ui, AssetDatabase.LoadAssetAtPath<PopGameplayConfiguration>(PopGameplayConfiguration.AssetPath));
+        if (scene.name == "Game" && ui.HasClassicHUD)
+        {
+            GameOverPanel result = null;
+            foreach (var root in scene.GetRootGameObjects()) { result = root.GetComponentInChildren<GameOverPanel>(true); if (result != null) break; }
+            if (result == null || !result.gameObject.activeInHierarchy || result.GetComponent<Canvas>() == null || result.GetComponent<GraphicRaycaster>() == null)
+                throw new BuildFailedException("Classic Game Over requires its active host and local Canvas/GraphicRaycaster. Keep the UI host active; disable only the retired score/best/settings branches.");
+        }
+        var ambient = AssetDatabase.LoadAssetAtPath<PopAmbientConfiguration>(PopAmbientConfiguration.AssetPath);
+        PopAmbientAuthoring.Validate(ambient);
+        if (scene.name == "Game" && ambient != null && ambient.enabled)
+        {
+            PopAmbientBackground rig = null;
+            foreach (var root in scene.GetRootGameObjects()) { rig = root.GetComponentInChildren<PopAmbientBackground>(true); if (rig != null) break; }
+            if (rig == null || !rig.HasPresentation) throw new BuildFailedException("Missing authored automatic backgrounds. Run Tools > Blokki Pop > Backgrounds > Install Automatic Score Backgrounds.");
+        }
     }
 }

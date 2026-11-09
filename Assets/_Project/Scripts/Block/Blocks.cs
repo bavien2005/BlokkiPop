@@ -463,12 +463,8 @@ public partial class Blocks : MonoBehaviour
         return slots;
     }
 
-    private int ChoosePolyomino(
-        BlockDifficultyLevel level,
-        bool mustFit,
-        bool[,] state,
-        BoardRiskReport risk,
-        bool isRescue)
+    private int ChoosePolyomino(BlockDifficultyLevel level, bool mustFit, bool[,] state,
+        BoardRiskReport risk, bool isRescue)
     {
         List<int> source = mustFit && fittingShapeIndexes.Count > 0
             ? fittingShapeIndexes

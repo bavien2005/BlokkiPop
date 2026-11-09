@@ -49,6 +49,7 @@ public class GameFlowManager : MonoBehaviour
     private ReviveOfferPanel revivePanel;
 
     public int HighScore => highScore;
+    public int HighScoreAtRunStart => highScoreAtRunStart;
     public int Score => score;
     public bool IsGameOver => isGameOver;
     public bool HasUsedRevive => reviveUsed;
@@ -316,6 +317,7 @@ public class GameFlowManager : MonoBehaviour
     {
         this.score += value;
         UpdateHighScore();
+        PopGameplaySession.Instance?.UpdateAmbientScore(score);
         _updateScore?.Invoke(score);
     }
 

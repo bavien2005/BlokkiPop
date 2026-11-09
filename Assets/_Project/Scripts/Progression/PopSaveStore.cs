@@ -16,9 +16,11 @@ public sealed class PopProgressData
 {
     public int schema = 1;
     public bool tutorialComplete;
+    public bool endlessTutorialComplete;
     public string selectedTheme = "sky";
     public string selectedEffect = "classic";
     public int largestSingleClear, bestCombo;
+    public int endlessBestWave, endlessBestScore, endlessBestBubbles;
     public List<PopLevelRecord> journey = new();
     // Daily identities include revision + UTC date; retries never grant a second completion.
     public List<PopLevelRecord> daily = new();
@@ -51,6 +53,13 @@ public sealed class PopRunSnapshot
     public int[] trayShapes;
     public int[] trayColors;
     public bool[] trayAvailable;
+    public int endlessWave, waveStartMoves, waveStartBubbles;
+    public uint endlessRandomState;
+    public bool endlessPendingWave;
+    public string endlessRevision;
+    public PopLevelDefinition endlessDefinition;
+    // Optional cosmetic extension: absent in old saves, never part of puzzle/RNG validation.
+    public PopAmbientRunState ambience;
 }
 
 /// <summary>Own versioned keys only. Never DeleteAll, and never touches the legacy HighScore key.</summary>
@@ -155,6 +164,7 @@ public sealed class PopSaveStore
         if (data != null && data.selectedEffect == null) data.selectedEffect = "classic";
         if (data == null || data.schema != 1 || data.selectedTheme == null || data.selectedTheme.Length > 128 ||
             data.selectedEffect.Length > 128 || data.largestSingleClear < 0 || data.largestSingleClear > 16 || data.bestCombo < 0 ||
+            data.endlessBestWave < 0 || data.endlessBestScore < 0 || data.endlessBestBubbles < 0 ||
             data.journey == null || data.daily == null || data.journey.Count > 10000 || data.daily.Count > 20000) return false;
         return ValidRecords(data.journey) && ValidRecords(data.daily);
     }
@@ -188,7 +198,8 @@ public sealed class PopSaveStore
                 (run.trayAvailable[i] && (run.trayShapes[i] < 0 || run.trayColors[i] < 0))) return false;
             available |= run.trayAvailable[i];
         }
-        return available;
+        if (run.mode == PopGameMode.EndlessPop && !PopEndlessGenerator.ValidSnapshot(run)) return false;
+        return available || run.mode == PopGameMode.EndlessPop && run.endlessPendingWave;
     }
 }
 

@@ -3,6 +3,7 @@ using UnityEngine;
 [DefaultExecutionOrder(-100)]
 [DisallowMultipleComponent]
 [RequireComponent(typeof(Camera))]
+[ExecuteAlways]
 public sealed class ResponsiveGameLayout : MonoBehaviour
 {
     [Tooltip("World-space center of the complete board and block tray area.")]
@@ -15,8 +16,11 @@ public sealed class ResponsiveGameLayout : MonoBehaviour
     [SerializeField] private Vector2 safePadding = new Vector2(0.35f, 0.35f);
 
     [SerializeField, Min(0.1f)] private float minimumOrthographicSize = 4.5f;
+    [Tooltip("In edit mode, fit around the visible authored Classic/Endless HUD. Only the camera adapts; no child UI positions are overwritten.")]
+    [SerializeField] private bool previewEndlessLayout = true;
 
     private Camera targetCamera;
+    private PopGameplayUI authoredUI;
     private int previousScreenWidth = -1;
     private int previousScreenHeight = -1;
     private float previousAspect = -1f;
@@ -40,10 +44,31 @@ public sealed class ResponsiveGameLayout : MonoBehaviour
 
     private void ApplyLayout(bool force)
     {
+        if (targetCamera == null) targetCamera = GetComponent<Camera>();
         if (targetCamera == null || !targetCamera.orthographic) return;
         if (Screen.width <= 0 || Screen.height <= 0) return;
 
         var safeArea = Screen.safeArea;
+        // The new HUD is screen-space; the board/tray are world-space. Reserve
+        // the actual authored panels, not a guessed Y position for one phone.
+        // Journey/Daily keep their existing layout. Classic/Endless reserve only
+        // their own authored HUD; Pause does not change the reserved playfield.
+        var session = PopGameplaySession.Instance;
+        var ui = PopGameplayUI.Instance;
+        if (!Application.isPlaying)
+        {
+            if (authoredUI == null)
+                foreach (var candidate in FindObjectsByType<PopGameplayUI>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    if (candidate.gameObject.scene == gameObject.scene && candidate.Views != null && candidate.Views.Count > 0) { authoredUI = candidate; break; }
+            ui = authoredUI;
+        }
+        bool endlessLayout = Application.isPlaying ? session != null && session.UsesEndlessPresentation : previewEndlessLayout && ui != null &&
+            ui.ScenePreview == PopUIPage.Hud && ui.EndlessQueue != null && ui.EndlessQueue.gameObject.activeInHierarchy;
+        if (endlessLayout && ui != null && ui.EndlessQueue != null &&
+            ui.EndlessQueue.TryGetPlayfieldRect(safeArea, out Rect playfield)) safeArea = playfield;
+        bool classicLayout = Application.isPlaying ? session != null && session.Mode == PopGameMode.Classic : previewEndlessLayout && ui != null &&
+            ui.ScenePreview == PopUIPage.Hud && ui.ClassicHUD != null && ui.ClassicHUD.gameObject.activeInHierarchy;
+        if (classicLayout && ui != null && ui.HasClassicHUD && ui.ClassicHUD.TryGetPlayfieldRect(safeArea, out Rect classicPlayfield)) safeArea = classicPlayfield;
         var aspect = targetCamera.aspect;
 
         if (!force &&

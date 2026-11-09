@@ -14,7 +14,6 @@ public partial class Board : MonoBehaviour
     [SerializeField] private BlockColorPalette colorPalette;
 
     [Header("Effects")]
-    [SerializeField] private Color lineClearEffectColor = new(0.05f, 0.88f, 1f, 1f);
     [SerializeField] private BoardEffects boardEffects;
     [SerializeField] private ComboPopupController comboPopup;
 
@@ -309,7 +308,8 @@ public partial class Board : MonoBehaviour
         ClearFullLines(
             point,
             polyominoColums,
-            polyominoRows
+            polyominoRows,
+            color
         );
 
         // A single light tick covers the successful placement, including clears
@@ -346,7 +346,7 @@ public partial class Board : MonoBehaviour
         }
     }
 
-    private void ClearFullLines(Vector2Int point , int polyominoColums , int polyominoRows)
+    private void ClearFullLines(Vector2Int point , int polyominoColums , int polyominoRows, Color placedColor)
     {
         FullLineColums(point.x, point.x + polyominoColums);
         FullLineRows(point.y, point.y + polyominoRows);
@@ -372,14 +372,14 @@ public partial class Board : MonoBehaviour
             GameFlowManager._instance?.AddCoin(clearScore);
 
             Vector3 rewardOrigin = GetClearRewardOrigin();
-            boardEffects?.PlayScoreReward(clearScore, rewardOrigin, lineClearEffectColor);
+            boardEffects?.PlayScoreReward(clearScore, rewardOrigin, placedColor);
 
             comboPopup?.Show(comboResult);
             
             boardEffects?.PlayLineClear(
                 fullLineRows,
                 fullLineColums,
-                lineClearEffectColor,
+                placedColor,
                 clearedLineCount,
                 comboResult.FeverStarted);
 
@@ -395,8 +395,8 @@ public partial class Board : MonoBehaviour
             boardEffects?.BreakCombo();
         }
 
-        ClearFullLineColums();
-        ClearFullLineRows();
+        ClearFullLineColums(placedColor);
+        ClearFullLineRows(placedColor);
         PopGameplaySession.Instance?.RecordBoardPlacement(fullLineColums.Count + fullLineRows.Count, popped, placementCombo);
         RefreshMarkers();
 
@@ -475,7 +475,7 @@ public partial class Board : MonoBehaviour
         }
     }
 
-    private void ClearFullLineColums()
+    private void ClearFullLineColums(Color placedColor)
     {
         foreach (var c in fullLineColums)
         {
@@ -486,7 +486,7 @@ public partial class Board : MonoBehaviour
                 colorIds[r, c] = -1;
 
                 cells[r, c].PlayClearPulse(
-                    lineClearEffectColor,
+                    placedColor,
                     boardEffects != null ? boardEffects.CellClearDuration : 0.22f,
                     boardEffects != null
                         ? boardEffects.GetClearWaveDelay(new Vector2Int(c, r), fullLineRows, fullLineColums)
@@ -495,7 +495,7 @@ public partial class Board : MonoBehaviour
         }
     }
 
-    private void ClearFullLineRows()
+    private void ClearFullLineRows(Color placedColor)
     {
         foreach (var r in fullLineRows)
         {
@@ -506,7 +506,7 @@ public partial class Board : MonoBehaviour
                 colorIds[r, c] = -1;
 
                 cells[r, c].PlayClearPulse(
-                    lineClearEffectColor,
+                    placedColor,
                     boardEffects != null ? boardEffects.CellClearDuration : 0.22f,
                     boardEffects != null
                         ? boardEffects.GetClearWaveDelay(new Vector2Int(c, r), fullLineRows, fullLineColums)

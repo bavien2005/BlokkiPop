@@ -26,6 +26,112 @@ MonoBehaviour:
     promptForAdAgeOnLaunch: 0
     classicFixedSeed: 0
   tutorial:
+    automaticOnFirstEndless: 1
+    endlessLesson:
+      id: endless-lesson-v1
+      title: "H\u1ECCC PH\xC1 B\xD3NG"
+      description: 
+      moveLimit: 4
+      targetLines: 0
+      targetBubbles: 4
+      targetScore: 0
+      targetCombo: 0
+      targetMultiClear: 0
+      threeStarMoves: 4
+      twoStarMoves: 4
+      startingCells:
+      - position: {x: 0, y: 1}
+        colorId: 1
+        bubble: 1
+      - position: {x: 0, y: 3}
+        colorId: 3
+        bubble: 1
+      - position: {x: 0, y: 5}
+        colorId: 5
+        bubble: 1
+      - position: {x: 0, y: 6}
+        colorId: 0
+        bubble: 1
+      - position: {x: 1, y: 1}
+        colorId: 2
+        bubble: 0
+      - position: {x: 1, y: 3}
+        colorId: 4
+        bubble: 0
+      - position: {x: 1, y: 5}
+        colorId: 0
+        bubble: 0
+      - position: {x: 1, y: 6}
+        colorId: 1
+        bubble: 0
+      - position: {x: 2, y: 5}
+        colorId: 1
+        bubble: 0
+      - position: {x: 2, y: 6}
+        colorId: 2
+        bubble: 0
+      - position: {x: 3, y: 1}
+        colorId: 4
+        bubble: 0
+      - position: {x: 4, y: 1}
+        colorId: 5
+        bubble: 0
+      - position: {x: 5, y: 1}
+        colorId: 0
+        bubble: 0
+      - position: {x: 5, y: 3}
+        colorId: 2
+        bubble: 0
+      - position: {x: 5, y: 5}
+        colorId: 4
+        bubble: 0
+      - position: {x: 5, y: 6}
+        colorId: 5
+        bubble: 0
+      - position: {x: 6, y: 1}
+        colorId: 1
+        bubble: 0
+      - position: {x: 6, y: 3}
+        colorId: 3
+        bubble: 0
+      - position: {x: 6, y: 5}
+        colorId: 5
+        bubble: 0
+      - position: {x: 6, y: 6}
+        colorId: 0
+        bubble: 0
+      - position: {x: 7, y: 1}
+        colorId: 2
+        bubble: 0
+      - position: {x: 7, y: 3}
+        colorId: 4
+        bubble: 0
+      - position: {x: 7, y: 5}
+        colorId: 0
+        bubble: 0
+      - position: {x: 7, y: 6}
+        colorId: 1
+        bubble: 0
+      pieceSequence: 00000000030000000200000002000000
+      verifiedSolution:
+      - shape: 0
+        origin: {x: 2, y: 1}
+      - shape: 3
+        origin: {x: 2, y: 3}
+      - shape: 2
+        origin: {x: 3, y: 5}
+      - shape: 2
+        origin: {x: 4, y: 5}
+    endlessInstructions:
+    - "X\xF3a h\xE0ng c\xF3 b\xF3ng: k\xE9o kh\u1ED1i m\u1ED9t \xF4 v\xE0o ch\u1ED7
+      s\xE1ng. M\u1ED7i kh\u1ED1i \u0111\u1EB7t th\xE0nh c\xF4ng t\u1ED1n 1 l\u01B0\u1EE3t."
+    - "X\xF3a h\xE0ng ti\u1EBFp theo \u0111\u1EC3 l\u1EA5y b\xF3ng. Hai kh\u1ED1i
+      c\xF2n l\u1EA1i s\u1EBD chu\u1EA9n b\u1ECB m\u1ED9t l\u01B0\u1EE3t x\xF3a k\xE9p."
+    - "Nh\xECn TI\u1EBEP THEO: c\xF2n m\u1ED9t thanh d\u1ECDc. \u0110\u1EB7t thanh
+      hi\u1EC7n t\u1EA1i v\xE0o c\u1ED9t s\xE1ng, gi\u1EEF ch\u1ED7 cho thanh \u0111\xF3."
+    - "Khay m\u1EDBi \u0111\xE3 t\u1EDBi! \u0110\u1EB7t thanh d\u1ECDc v\xE0o ch\u1ED7
+      s\xE1ng \u0111\u1EC3 ph\xE1 hai b\xF3ng c\xF9ng l\xFAc. Trong v\xE1n th\u1EADt,
+      qua \u0111\u1EE3t v\u1EABn gi\u1EEF b\xE0n."
     automaticOnFirstClassic: 1
     skipAutomaticForExistingHighScore: 1
     allowSkip: 1
@@ -149,6 +255,44 @@ MonoBehaviour:
     rotationSeed: 20261013
     calendarDaysToShow: 28
     celebrationEveryWins: 7
+  endless:
+    replaceJourneyHomeButton: 1
+    resumeRun: 1
+    generatorRevision: endless-pop-v1
+    candidateAttempts: 28
+    minimumMoves: 6
+    maximumMoves: 9
+    startingSlack: 3
+    minimumSlack: 1
+    wavesPerDifficultyStep: 4
+    maximumTargetLanes: 4
+    bubblesPerLane: 2
+    breathingWaveInterval: 5
+    alternateLanePatterns: 1
+    multiClearWeight: 3
+    setupMoveWeight: 1.5
+    leftoverPocketPenalty: 0.3
+    transitionSeconds: 0.7
+    fixedSeed: 0
+    title: ENDLESS POP
+    play: "CH\u01A0I ENDLESS POP"
+    resume: "TI\u1EBEP T\u1EE4C ENDLESS POP"
+    newRun: "V\xC1N ENDLESS POP M\u1EDAI"
+    description: "X\xF3a h\u1EBFt b\xF3ng tr\u01B0\u1EDBc khi h\u1EBFt l\u01B0\u1EE3t.
+      Gi\u1EEF b\xE0n qua c\xE1c \u0111\u1EE3t. Xem tr\u01B0\u1EDBc to\xE0n b\u1ED9
+      kh\u1ED1i; m\u1ED7i khay c\xF3 th\u1EC3 \u0111\u1EB7t theo th\u1EE9 t\u1EF1
+      t\xF9y \xFD."
+    replaceWarning: "B\u1EAFt \u0111\u1EA7u Endless Pop m\u1EDBi? V\xE1n Endless
+      Pop \u0111ang l\u01B0u s\u1EBD b\u1ECB thay th\u1EBF. Classic, k\u1EF7 l\u1EE5c
+      v\xE0 giao di\u1EC7n \u0111\xE3 m\u1EDF v\u1EABn gi\u1EEF nguy\xEAn."
+  bubbleFeedback:
+    enabled: 1
+    burstSeconds: 0.38
+    ringDiameter: 1.25
+    staggerSeconds: 0.035
+    soundGain: 0.55
+    popColor: {r: 1, g: 0.83, b: 0.27, a: 1}
+    waveClearSound: 1
   ui:
     headingFont: {fileID: 11400000, guid: 125cb55b44b24c4393181402bc6200e6, type: 2}
     bodyFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -1630,7 +1774,8 @@ MonoBehaviour:
     - {r: 0.85882354, g: 0.5764706, b: 0.70980394, a: 1}
     - {r: 1, g: 0.7882353, b: 0.43137255, a: 1}
     backgroundTint: {r: 1, g: 0.76, b: 0.74, a: 1}
-    backgroundOverride: {fileID: 21300000, guid: e659090f5870eb0449e9e8be03d8396f, type: 3}
+    backgroundOverride: {fileID: 21300000, guid: e659090f5870eb0449e9e8be03d8396f,
+      type: 3}
     accent: {r: 0.91, g: 0.39, b: 0.37, a: 1}
     clearEffect: {r: 0.9415, g: 0.6035, b: 0.5905, a: 1}
     bubbleColor: {r: 1, g: 0.87, b: 0.28, a: 1}
@@ -1650,7 +1795,8 @@ MonoBehaviour:
     - {r: 0.8352941, g: 0.6431373, b: 1, a: 1}
     - {r: 1, g: 0.62352943, b: 0.6784314, a: 1}
     backgroundTint: {r: 0.28, g: 0.28, b: 0.58, a: 1}
-    backgroundOverride: {fileID: 21300000, guid: e659090f5870eb0449e9e8be03d8396f, type: 3}
+    backgroundOverride: {fileID: 21300000, guid: e659090f5870eb0449e9e8be03d8396f,
+      type: 3}
     accent: {r: 0.57, g: 0.37, b: 0.87, a: 1}
     clearEffect: {r: 0.7205, g: 0.5905, b: 0.9155, a: 1}
     bubbleColor: {r: 1, g: 0.87, b: 0.28, a: 1}

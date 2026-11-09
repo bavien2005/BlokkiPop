@@ -105,3 +105,6 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Unity crash-recovery scene snapshots; source scenes live under Assets/_Project/Scenes.
+/[Aa]ssets/_Recovery/

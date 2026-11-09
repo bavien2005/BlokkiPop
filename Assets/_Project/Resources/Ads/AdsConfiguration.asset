@@ -14,11 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   useTestAds: 1
   liveAdsComplianceApproved: 0
-  enableDevelopmentRewardSimulation: 0
+  enableDevelopmentRewardSimulation: 1
   useConfiguredMediationTestUnitInDevelopment: 0
   androidAppId: ca-app-pub-1158986668295280~1535263235
   androidRewardedAdUnitId: ca-app-pub-1158986668295280/3969854887
-  privacyPolicyUrl: 
+  privacyPolicyUrl: https://blokki-pop-vien-privacy.berrydog4.chatgpt.site
   testDeviceIds: []
   minimumLoadRetrySeconds: 15
   maximumLoadRetries: 4

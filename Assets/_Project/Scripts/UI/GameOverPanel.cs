@@ -3,7 +3,7 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
-[RequireComponent(typeof(RectTransform))]
+[RequireComponent(typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster))]
 public sealed class GameOverPanel : MonoBehaviour
 {
     public static GameOverPanel Instance { get; private set; }
@@ -58,6 +58,10 @@ public sealed class GameOverPanel : MonoBehaviour
 
     public void Show(int score, int bestScore, int maxCombo, int linesCleared, bool isNewBest)
     {
+        Canvas overlay = GetComponent<Canvas>();
+        overlay.overrideSorting = true;
+        Canvas gameplay = PopGameplayUI.Instance != null ? PopGameplayUI.Instance.GetComponent<Canvas>() : null;
+        if (gameplay != null && overlay.sortingOrder <= gameplay.sortingOrder) overlay.sortingOrder = gameplay.sortingOrder + 1;
         gameObject.SetActive(true);
         if (showRoutine != null)
             StopCoroutine(showRoutine);

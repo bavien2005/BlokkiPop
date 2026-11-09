@@ -21,7 +21,8 @@ public sealed class ReviveOfferPanel : MonoBehaviour
             typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(ReviveOfferPanel));
         Canvas rootCanvas = root.GetComponent<Canvas>();
         rootCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        rootCanvas.sortingOrder = 200;
+        Canvas gameplay = PopGameplayUI.Instance != null ? PopGameplayUI.Instance.GetComponent<Canvas>() : null;
+        rootCanvas.sortingOrder = Mathf.Max(1900, gameplay != null ? gameplay.sortingOrder + 1 : 1900);
         CanvasScaler scaler = root.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1080, 1920);

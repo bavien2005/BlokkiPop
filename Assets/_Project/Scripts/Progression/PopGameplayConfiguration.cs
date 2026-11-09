@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
-public enum PopGameMode { Classic, Journey, Daily, Tutorial }
+// Append modes: existing numeric save identities must never change.
+public enum PopGameMode { Classic, Journey, Daily, Tutorial, EndlessPop }
 
 [Serializable]
 public sealed class PopStartingCell
@@ -87,6 +88,18 @@ public sealed class PopEffectDefinition
 }
 
 [Serializable]
+public sealed class PopBubbleFeedbackSettings
+{
+    public bool enabled = true;
+    [Range(.1f, .8f)] public float burstSeconds = .38f;
+    [Range(.2f, 2f)] public float ringDiameter = 1.25f;
+    [Range(0, .15f)] public float staggerSeconds = .035f;
+    [Range(0, 1)] public float soundGain = .55f;
+    public Color popColor = new(1, .83f, .27f);
+    public bool waveClearSound = true;
+}
+
+[Serializable]
 public sealed class PopDailySettings
 {
     public bool enabled = true;
@@ -103,6 +116,16 @@ public sealed class PopDailySettings
 [Serializable]
 public sealed class PopTutorialSettings
 {
+    [Header("Endless Pop first-play lesson (independent of Classic)")]
+    public bool automaticOnFirstEndless = true;
+    public PopLevelDefinition endlessLesson = PopLevelCatalog.CreateEndlessLesson();
+    [TextArea] public string[] endlessInstructions =
+    {
+        "Xóa hàng có bóng: kéo khối một ô vào chỗ sáng. Mỗi khối đặt thành công tốn 1 lượt.",
+        "Xóa hàng tiếp theo để lấy bóng. Hai khối còn lại sẽ chuẩn bị một lượt xóa kép.",
+        "Nhìn TIẾP THEO: còn một thanh dọc. Đặt thanh hiện tại vào cột sáng, giữ chỗ cho thanh đó.",
+        "Khay mới đã tới! Đặt thanh dọc vào chỗ sáng để phá hai bóng cùng lúc. Trong ván thật, qua đợt vẫn giữ bàn."
+    };
     public bool automaticOnFirstClassic = true;
     public bool skipAutomaticForExistingHighScore = true;
     public bool allowSkip = true;
@@ -268,6 +291,8 @@ public sealed class PopGameplayConfiguration : ScriptableObject
     public PopRunSettings runs = new();
     public PopTutorialSettings tutorial = new();
     public PopDailySettings daily = new();
+    public PopEndlessSettings endless = new();
+    public PopBubbleFeedbackSettings bubbleFeedback = new();
     public PopUiSettings ui = new();
     public PopUiText text = new();
     [Tooltip("Authored modes use these rules so score goals and solution validation agree. Classic keeps its Board Inspector rules.")]

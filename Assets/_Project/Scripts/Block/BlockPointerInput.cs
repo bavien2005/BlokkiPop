@@ -12,6 +12,7 @@ using TouchPhase = UnityEngine.InputSystem.TouchPhase;
 public sealed class BlockPointerInput : MonoBehaviour
 {
     private static BlockPointerInput instance;
+    public static bool IsDragging => instance != null && instance.dragging != null;
     private readonly List<RaycastResult> uiHits = new();
     private Block dragging;
     private int touchId;
@@ -33,7 +34,7 @@ public sealed class BlockPointerInput : MonoBehaviour
 
     private void Update()
     {
-        if (Time.timeScale <= 0 || AdsPrivacyPanel.IsModalOpen || PopGameplayUI.IsModalOpen ||
+        if (Time.timeScale <= 0 || PopGameplaySession.Instance != null && PopGameplaySession.Instance.IsTransitioning || AdsPrivacyPanel.IsModalOpen || PopGameplayUI.IsModalOpen ||
             AdsService.Instance != null && AdsService.Instance.IsShowing ||
             GameFlowManager._instance != null && GameFlowManager._instance.IsGameOver)
         { CancelGesture(); return; }

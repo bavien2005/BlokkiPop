@@ -68,7 +68,7 @@ public sealed class BoardEffects : MonoBehaviour
     [Header("Score Reward")]
     [Tooltip("How long the floating score reward takes to rise and curve toward the score HUD.")]
     [SerializeField, Min(0.2f)] private float scoreFlyDuration = 0.82f;
-    [Tooltip("Optional exact score-text target. If unset, the active non-high-score TextScore is used.")]
+    [Tooltip("Optional exact legacy score target. If unset, use the active authored Classic/Endless HUD, then fall back to TextScore.")]
     [SerializeField] private TextScore scoreHudTarget;
     [Tooltip("World-space TMP font size for each +points popup. Increase this if the numbers are hard to read on your device.")]
     [SerializeField, Min(8f)] private float floatingScoreFontSize = 36f;
@@ -208,14 +208,9 @@ public sealed class BoardEffects : MonoBehaviour
         int clearedLineCount,
         bool feverStarted)
     {
-        Color tierColor = feverStarted || clearedLineCount >= 4
-            ? feverColor
-            : clearedLineCount >= 3
-                ? Color.Lerp(effectColor, new Color(1f, 0.24f, 0.64f), 0.55f)
-                : clearedLineCount == 2
-                    ? Color.Lerp(effectColor, Color.white, 0.34f)
-                    : effectColor;
-        effectColor = Opaque(tierColor);
+        // The placement owns the clear's hue. Big-clear/Fever intensity still
+        // comes from motion/count/size, never a replacement pink/gold/theme hue.
+        effectColor = Opaque(effectColor);
 
         if (clearedLineCount == 2)
         {
@@ -317,7 +312,8 @@ public sealed class BoardEffects : MonoBehaviour
         int particleCount = Mathf.Clamp(Mathf.RoundToInt(clearParticlesPerCell * (style?.particleMultiplier ?? 1f)), 1, 30);
         float speed = clearParticleSpeed * (style?.speedMultiplier ?? 1f);
         float lifetime = clearParticleLifetime * (style?.lifetimeMultiplier ?? 1f);
-        if (style != null) color = Color.Lerp(color, style.tint, style.tintStrength);
+        // Cosmetic styles may change fragment shape/speed/lifetime, not the
+        // hue shared by preview, dissolving cells and the placed block.
         foreach (Vector2Int point in points)
         {
             for (int i = 0; i < particleCount; ++i)
@@ -407,6 +403,9 @@ public sealed class BoardEffects : MonoBehaviour
         Vector3 start = origin + Vector3.up * 0.35f;
         Vector3 end = start + Vector3.up * 1.2f;
         Camera camera = Camera.main;
+        RectTransform authoredScore = scoreHudTarget == null && PopGameplayUI.Instance != null ? PopGameplayUI.Instance.ScoreRewardTarget : null;
+        if (authoredScore != null && cachedScoreTarget != authoredScore)
+        { cachedScoreTarget = authoredScore; cachedScoreCanvas = authoredScore.GetComponentInParent<Canvas>(); }
         if (cachedScoreTarget == null)
         {
             TextScore scoreHud = scoreHudTarget != null

@@ -1,5 +1,7 @@
 # Blokki Pop — gameplay và tiến trình v1
 
+> Cập nhật 16/10/2026: đã thêm **Endless Pop** làm chế độ giải bóng liên tục ở nút chính Home. Journey 20 màn vẫn giữ làm bài luyện/Daily bank. Xem [luật, bộ sinh, save và UI của Endless Pop](Endless-Pop.md). Các phần Journey bên dưới mô tả bộ bài luyện cố định, không phải chế độ mới.
+
 ## Bản này có gì
 
 Một scene `Game` phục vụ bốn chế độ. Không nhân bản 20 scene, không buộc người chơi xem quảng cáo để vượt Journey/Daily và không dùng điểm của các chế độ đó để ghi đè kỷ lục Classic.

@@ -1,0 +1,85 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a7b609217e854511a52be881ce8462d3, type: 3}
+  m_Name: PopAmbientConfiguration
+  m_EditorClassIdentifier: Assembly-CSharp::PopAmbientConfiguration
+  paletteRevision: 1
+  enabled: 1
+  classicEndless: 1
+  endlessPop: 1
+  firstScore: 1000
+  scoreInterval: 1000
+  crossfadeSeconds: 0.85
+  screenBounce: 0.09
+  screenLift: 0.018
+  bounceCount: 2
+  refreshRingWidth: 0.045
+  refreshRingGlow: 0.9
+  returnToDefaultSeconds: 0.45
+  reducedMotion: 0
+  particleDensity: 1
+  transitionBurstCount: 48
+  transitionBurstSpeed: 8
+  transitionBurstLifetime: 1.05
+  transitionBurstSize: {x: 0.12, y: 0.3}
+  scenes:
+  - id: snow
+    title: "XANH B\u0102NG \xB7 TUY\u1EBET R\u01A0I"
+    enabled: 1
+    effect: 0
+    topColor: {r: 0.36, g: 0.55, b: 0.65, a: 1}
+    bottomColor: {r: 0.62, g: 0.73, b: 0.78, a: 1}
+    glowColor: {r: 0.9, g: 0.97, b: 1, a: 1}
+    glowStrength: 0.035
+    particleColor: {r: 0.9, g: 0.97, b: 1, a: 1}
+    particleAlpha: 0.65
+    maxParticles: 65
+    emissionPerSecond: 5
+    particleLifetime: 18
+    particleSize: {x: 0.045, y: 0.14}
+    verticalSpeed: {x: -0.95, y: -0.45}
+    horizontalDrift: 0.07
+    turbulence: 0.07
+  - id: stars
+    title: "T\xCDM D\u1ECAU \xB7 SAO L\u1EA4P L\xC1NH"
+    enabled: 1
+    effect: 1
+    topColor: {r: 0.22, g: 0.22, b: 0.39, a: 1}
+    bottomColor: {r: 0.43, g: 0.38, b: 0.55, a: 1}
+    glowColor: {r: 0.85, g: 0.9, b: 1, a: 1}
+    glowStrength: 0.035
+    particleColor: {r: 0.85, g: 0.9, b: 1, a: 1}
+    particleAlpha: 0.9
+    maxParticles: 40
+    emissionPerSecond: 4
+    particleLifetime: 7
+    particleSize: {x: 0.09, y: 0.22}
+    verticalSpeed: {x: -0.018, y: 0.025}
+    horizontalDrift: 0.025
+    turbulence: 0
+  - id: sunset
+    title: "XANH NG\u1ECCC \xB7 \u0110OM \u0110\xD3M"
+    enabled: 1
+    effect: 2
+    topColor: {r: 0.13, g: 0.36, b: 0.38, a: 1}
+    bottomColor: {r: 0.34, g: 0.58, b: 0.53, a: 1}
+    glowColor: {r: 1, g: 0.92, b: 0.45, a: 1}
+    glowStrength: 0.035
+    particleColor: {r: 1, g: 0.92, b: 0.45, a: 1}
+    particleAlpha: 0.9
+    maxParticles: 35
+    emissionPerSecond: 3
+    particleLifetime: 10
+    particleSize: {x: 0.06, y: 0.16}
+    verticalSpeed: {x: 0.02, y: 0.11}
+    horizontalDrift: 0.025
+    turbulence: 0.07

@@ -23,6 +23,7 @@ public static class PopJourneyHomeValidation
     {
         if(Application.companyName!="BlokkiPopRegression"||!Application.dataPath.Replace('\\','/').Contains("/.utmp/domain-reload-validation-20261009/"))throw new Exception("QA project only.");
         Directory.CreateDirectory(output);
+        var legacyConfig=AssetDatabase.LoadAssetAtPath<PopGameplayConfiguration>(PopGameplayConfiguration.AssetPath);legacyConfig.endless.replaceJourneyHomeButton=false;EditorUtility.SetDirty(legacyConfig);AssetDatabase.SaveAssets();
         // Refresh only these early QA-generated defaults before publishing the new prefab.
         GameObject contents=PrefabUtility.LoadPrefabContents(PopJourneyHomeAuthoring.PrefabPath);
         var home=contents.GetComponent<PopGameplayUI>().View(PopUIPage.Home);home.Element("Levels").updateText=false;

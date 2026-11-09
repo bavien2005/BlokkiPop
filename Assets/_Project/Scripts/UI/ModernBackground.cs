@@ -64,6 +64,14 @@ public sealed class ModernBackground : MonoBehaviour
         UpdateLayout(true);
     }
 
+    // The score-background rig overlays art without replacing/destroying this
+    // authored default renderer. Returning home/game-over reveals it unchanged.
+    public void SetDefaultEffectsVisible(bool visible)
+    {
+        if (fallingLightsObject != null && fallingLightsObject.activeSelf != visible) fallingLightsObject.SetActive(visible);
+        if (floatingDiamondsObject != null && floatingDiamondsObject.activeSelf != visible) floatingDiamondsObject.SetActive(visible);
+    }
+
 #if UNITY_EDITOR
     private void OnValidate()
     {

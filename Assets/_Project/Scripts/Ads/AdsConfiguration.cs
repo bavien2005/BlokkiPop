@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
 [CreateAssetMenu(fileName = "AdsConfiguration", menuName = "Blokki Pop/Ads Configuration")]
 public sealed class AdsConfiguration : ScriptableObject
 {
+  
     public const string ResourcePath = "Ads/AdsConfiguration";
     public const string AndroidTestAppId = "ca-app-pub-3940256099942544~3347511713";
     // Official v11.5.0 Google Mobile Ads Unity sample rewarded unit.
@@ -32,7 +34,7 @@ public sealed class AdsConfiguration : ScriptableObject
     [SerializeField, Range(0, 6)] private int maximumLoadRetries = 4;
     [SerializeField, Range(1f, 55f)] private float rewardedExpiryMinutes = 50f;
     [SerializeField, Range(15f, 120f)] private float requestTimeoutSeconds = 45f;
-
+  
     public bool UseTestAds => useTestAds;
     public bool LiveAdsComplianceApproved => liveAdsComplianceApproved;
     public bool EnableDevelopmentRewardSimulation => enableDevelopmentRewardSimulation;

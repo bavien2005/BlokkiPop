@@ -4,7 +4,7 @@ Fill in the bracketed fields with contact details that are monitored before publ
 
 - Developer: VienStudio
 - Support email: nguyenbavien05@gmail.com
-- Privacy policy: `[PUBLIC HTTPS PRIVACY-POLICY URL]`
+- Privacy policy: https://blokki-pop-vien-privacy.berrydog4.chatgpt.site
 - Optional support page: `[PUBLIC HTTPS SUPPORT PAGE OR ISSUE FORM]`
 
 Suggested response template:

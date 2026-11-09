@@ -74,7 +74,7 @@ public partial class Blocks
     public bool TryPlaceSlot(int slot, Vector2Int origin)
     {
         if (slot < 0 || slot >= blocks.Length || !blocks[slot].gameObject.activeSelf || GameFlowManager._instance == null ||
-            GameFlowManager._instance.IsGameOver || Time.timeScale <= 0 || PopGameplayUI.IsModalOpen || AdsPrivacyPanel.IsModalOpen ||
+            GameFlowManager._instance.IsGameOver || Time.timeScale <= 0 || PopGameplaySession.Instance != null && PopGameplaySession.Instance.IsTransitioning || PopGameplayUI.IsModalOpen || AdsPrivacyPanel.IsModalOpen ||
             AdsService.Instance != null && AdsService.Instance.IsShowing) return false;
         if (!board.Place(origin, polyominoIndexes[slot], trayColorIds[slot])) return false;
         blocks[slot].gameObject.SetActive(false); Remove(); return true;

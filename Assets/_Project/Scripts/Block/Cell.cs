@@ -126,6 +126,10 @@ public class Cell : MonoBehaviour
         StopVisualAnimation();
         SetPreviewGlow(false, Color.clear);
         gameObject.SetActive(true);
+        // Even cells waiting for their scan delay must hold the placed block's
+        // color, not briefly revert to the old mixed colors underneath.
+        spriteRenderer.sprite = highlight;
+        spriteRenderer.color = Opaque(effectColor);
         visualAnimation = StartCoroutine(ClearPulse(effectColor, duration, delay));
     }
 

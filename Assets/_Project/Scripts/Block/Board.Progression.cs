@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -8,9 +9,17 @@ public partial class Board
     private readonly List<SpriteRenderer> lessonMarkers = new();
     private Sprite markerSprite;
     private Texture2D markerTexture;
+    private readonly List<SpriteRenderer> bubbleBurstPool = new();
     public bool IsReady => HasInitializedCells();
+    public int ColorCount => colorPalette.Count;
     public void CancelPlacementPreview()
-    { UnHover(); UnHighlight(); previousHoverPoints.Clear(); }
+    {
+        // Scene teardown can destroy cells before an active tray drag is disabled.
+        // Cancel ownership without calling visual methods on already-destroyed Cells.
+        if (!HasInitializedCells())
+        { hoverPoints.Clear(); previousHoverPoints.Clear(); fullLineRows.Clear(); fullLineColums.Clear(); return; }
+        UnHover(); UnHighlight(); previousHoverPoints.Clear();
+    }
     public string ScoringSignature => System.FormattableString.Invariant($"{placementScorePerCell}/{valueScore}/{comboScoreBonusPerChain:R}/{maxComboScoreMultiplier:R}");
 
     public void ApplyRunConfiguration(PopGameplayConfiguration config, bool authored)
@@ -80,8 +89,6 @@ public partial class Board
     public void RefreshTheme()
     {
         if (!IsReady) return;
-        PopThemeDefinition theme = PopGameplaySession.Instance?.SelectedTheme;
-        if (theme != null) lineClearEffectColor = theme.clearEffect;
         for (int row = 0; row < Size; ++row)
             for (int col = 0; col < Size; ++col)
             {
@@ -94,11 +101,51 @@ public partial class Board
     private int PopClearedBubbles()
     {
         int popped = 0;
+        var points = new List<Vector2Int>();
         for (int row = 0; row < Size; ++row)
             for (int col = 0; col < Size; ++col)
                 if (bubbleTargets[row, col] && (fullLineRows.Contains(row) || fullLineColums.Contains(col)))
-                { ++popped; bubbleTargets[row, col] = false; }
+                { ++popped; bubbleTargets[row, col] = false; points.Add(new Vector2Int(col, row)); }
+        var feedback = PopGameplaySession.Instance?.Configuration.bubbleFeedback;
+        if (popped > 0 && feedback != null && feedback.enabled)
+        {
+            StartCoroutine(AnimateBubblePops(points, feedback));
+            AudioManager.Instance?.PlayBubblePopCue(popped, feedback.soundGain);
+        }
         return popped;
+    }
+
+    private IEnumerator AnimateBubblePops(List<Vector2Int> points, PopBubbleFeedbackSettings settings)
+    {
+        // Bounded VFX pool, not UI: no board/tray transforms, input coordinates or puzzle RNG change.
+        var rings = new List<SpriteRenderer>(points.Count);
+        foreach (var point in points)
+        {
+            SpriteRenderer ring = bubbleBurstPool.Find(item => item != null && !item.gameObject.activeSelf);
+            if (ring == null && bubbleBurstPool.Count < 64)
+            { ring = CreateMarker("Bubble pop VFX (pooled)"); bubbleBurstPool.Add(ring); }
+            if (ring == null) break;
+            ring.gameObject.SetActive(true); ring.sortingOrder = 125;
+            ring.transform.position = new Vector3(point.x + .5f, point.y + .5f, -.3f);
+            ring.transform.localScale = Vector3.zero; ring.color = Color.clear;
+            rings.Add(ring);
+        }
+        float duration = Mathf.Clamp(settings.burstSeconds, .1f, .8f);
+        float stagger = Mathf.Clamp(settings.staggerSeconds, 0, .15f);
+        float total = duration + Mathf.Min(5, rings.Count - 1) * stagger;
+        for (float elapsed = 0; elapsed < total; elapsed += Time.deltaTime)
+        {
+            for (int i = 0; i < rings.Count; ++i)
+            {
+                float t = Mathf.Clamp01((elapsed - Mathf.Min(i, 5) * stagger) / duration);
+                float size = Mathf.Lerp(.35f, Mathf.Clamp(settings.ringDiameter, .2f, 2f), 1 - (1 - t) * (1 - t));
+                rings[i].transform.localScale = Vector3.one * size;
+                Color color = Color.Lerp(Color.white, settings.popColor, t); color.a = t > 0 ? (1 - t) * .95f : 0;
+                rings[i].color = color;
+            }
+            yield return null;
+        }
+        foreach (var ring in rings) if (ring != null) ring.gameObject.SetActive(false);
     }
 
     private void RefreshMarkers()

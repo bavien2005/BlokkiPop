@@ -1,5 +1,7 @@
 # Home Journey Focus — 15/10/2026
 
+> Cập nhật 16/10/2026: nút chính và track nay dùng **Endless Pop**; Journey 20 màn chuyển vào gear → Bài luyện. Xem [Endless Pop](Endless-Pop.md) để biết luồng mới. Bố cục/Inspector của Home vẫn được giữ.
+
 Home được chuyển sang bố cục teal/vàng đã chọn: logo một dòng, bàn nhỏ có animation thả khối, đường tiến trình bốn nút, CTA Journey, tiếp tục Classic và ba lối tắt phía dưới. Không còn thẻ menu đặc chắn giữa màn hình hoặc Tap to Start trùng chức năng.
 
 ## Chỉnh trực tiếp, không cần Play

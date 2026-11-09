@@ -43,12 +43,28 @@ public sealed class PopGameplayUI : MonoBehaviour
     private bool waitingForHomeIntro;
     private BlokkiPopIntroController homeIntro;
     private PopJourneyHomeView homePresentation;
+    [SerializeField, Tooltip("Authored future-tray display. Its RectTransform is never positioned by runtime code.")]
+    private PopEndlessQueueView endlessQueue;
+    [SerializeField, Tooltip("Authored Classic score/header and compact stats. No runtime UI generation.")]
+    private PopClassicHUDView classicHUD;
+    [SerializeField, Tooltip("Edit mode only: Scene Preview = Hud shows Endless when enabled, Classic when disabled.")]
+    private bool previewEndlessHUD = true;
+    private bool? lastEndlessPresentation;
+    private bool? lastLegacyCanvasHidden;
+    private readonly Dictionary<Canvas, bool> legacyScoreCanvases = new();
+    private readonly Dictionary<GraphicRaycaster, bool> legacyScoreRaycasters = new();
+    private readonly Dictionary<Graphic, bool> legacyScoreGraphics = new();
     private string displayedDailyDate;
     private Action backAction;
     private readonly Dictionary<Button, UnityAction> listeners = new();
     private readonly List<Coroutine> starRoutines = new();
     private readonly Dictionary<RectTransform, Vector3> starBaseScales = new();
     public IReadOnlyList<PopUIView> Views => views;
+    public PopEndlessQueueView EndlessQueue => endlessQueue;
+    public PopClassicHUDView ClassicHUD => classicHUD;
+    public bool HasClassicHUD => classicHUD != null && classicHUD.HasPresentation;
+    public RectTransform ScoreRewardTarget => session != null && session.Mode == PopGameMode.Classic && HasClassicHUD ? classicHUD.score.rectTransform :
+        session != null && session.UsesEndlessPresentation && endlessQueue != null && endlessQueue.score != null ? endlessQueue.score.rectTransform : null;
     public PopUIPage ScenePreview { get => scenePreview; set => scenePreview = value; }
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatic() { Instance = null; }
@@ -70,7 +86,20 @@ public sealed class PopGameplayUI : MonoBehaviour
         { Debug.LogError("Duplicate authored PopGameplayUI in one scene.", this); enabled = false; return false; }
         Instance = this; config = session.Configuration; runtimeBound = true;
         homePresentation = View(PopUIPage.Home).GetComponent<PopJourneyHomeView>();
+        // Bind existing, scene-local score UI; do not create or rebuild anything.
+        foreach (TextScore scoreDisplay in FindObjectsByType<TextScore>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            Canvas canvas = scoreDisplay.GetComponentInParent<Canvas>()?.rootCanvas;
+            if (canvas == null || canvas.gameObject.scene != gameObject.scene || canvas.GetComponent<PopGameplayUI>() != null || legacyScoreCanvases.ContainsKey(canvas)) continue;
+            legacyScoreCanvases.Add(canvas, canvas.enabled);
+            if (canvas.TryGetComponent(out GraphicRaycaster raycaster)) legacyScoreRaycasters.Add(raycaster, raycaster.enabled);
+            foreach (Graphic graphic in canvas.GetComponentsInChildren<Graphic>(true))
+                if (graphic.GetComponentInParent<ComboPopupController>(true) == null && graphic.GetComponentInParent<GameOverPanel>(true) == null && graphic.name != "Fever Screen Dimmer")
+                    legacyScoreGraphics.TryAdd(graphic, graphic.enabled);
+        }
         foreach (PopUIView view in views) view.gameObject.SetActive(false);
+        if (endlessQueue != null) endlessQueue.gameObject.SetActive(false);
+        if (classicHUD != null) classicHUD.gameObject.SetActive(false);
         session.Changed += Refresh; ApplySafeArea();
         return true;
     }
@@ -109,11 +138,17 @@ public sealed class PopGameplayUI : MonoBehaviour
     {
         if (Application.isPlaying || views == null) return;
         foreach (PopUIView view in views) if (view != null) view.gameObject.SetActive(view.page == scenePreview || scenePreview == PopUIPage.Tutorial && view.page == PopUIPage.Hud);
+        bool endlessPreview = previewEndlessHUD && scenePreview == PopUIPage.Hud && endlessQueue != null && endlessQueue.HasPresentation;
+        if (endlessQueue != null) endlessQueue.gameObject.SetActive(endlessPreview);
+        bool classicPreview = !previewEndlessHUD && scenePreview == PopUIPage.Hud && HasClassicHUD;
+        if (classicHUD != null) classicHUD.gameObject.SetActive(classicPreview);
+        if (endlessPreview || classicPreview) View(PopUIPage.Hud).gameObject.SetActive(false);
     }
     private void Update()
     {
         ApplySafeArea();
         if (!Application.isPlaying || session == null) return;
+        ApplyModePresentation(); classicHUD?.Refresh(session);
         if (waitingForHomeIntro) TryShowHomeAfterIntro();
         if (rewardNoticeUntil > 0 && Time.unscaledTime >= rewardNoticeUntil) { rewardNoticeUntil = 0; Refresh(); }
         if (dailyPage && modal != null && displayedDailyDate != session.UtcToday) ShowDaily();
@@ -143,18 +178,25 @@ public sealed class PopGameplayUI : MonoBehaviour
         PopRunSnapshot classic = session.SavedRun(PopGameMode.Classic); view.Visible("Continue", classic != null);
         Bind(view, "Continue", homePresentation != null ? homePresentation.continueClassic : config.text.continueRun + " · " + (classic?.score ?? 0), () => Navigate(() => session.PlayClassic(true)));
         Bind(view, "Classic", homePresentation != null ? homePresentation.classicLabel : classic != null ? config.text.newRun : config.text.classic, NewClassic);
-        Bind(view, "Journey", homePresentation != null ? homePresentation.journeyLabel : config.text.journey, () => { if(homePresentation!=null)ShowLevel(homePresentation.SuggestedLevel);else ShowJourney(0); });
+        bool endlessEntry = config.endless.replaceJourneyHomeButton;
+        Bind(view, "Journey", endlessEntry ? session.SavedRun(PopGameMode.EndlessPop) != null ? config.endless.resume : config.endless.play : homePresentation != null ? homePresentation.journeyLabel : config.text.journey,
+            () => { if(endlessEntry)ShowEndless();else if(homePresentation!=null)ShowLevel(homePresentation.SuggestedLevel);else ShowJourney(0); });
+        if (endlessEntry && homePresentation != null && homePresentation.journeySubtitle != null) homePresentation.journeySubtitle.text = "Giải bóng liên tục • Giữ bàn qua mỗi đợt";
         view.Visible("Daily", config.daily.enabled); Bind(view, "Daily", homePresentation != null ? homePresentation.dailyLabel : config.text.daily, ShowDaily);
-        Bind(view, "Rewards", homePresentation != null ? homePresentation.rewardsLabel : config.text.themes, ShowThemes);
-        Bind(view, "Learn", homePresentation != null ? homePresentation.learnLabel : config.text.tutorial, () => Navigate(session.PlayTutorial));
+        if (session.UsesAutomaticBackgrounds)
+            Bind(view, "Rewards", homePresentation != null ? homePresentation.practiceLabel : "BÀI LUYỆN", () => ShowJourney(0));
+        else Bind(view, "Rewards", homePresentation != null ? homePresentation.rewardsLabel : config.text.themes, ShowThemes);
+        Bind(view, "Learn", homePresentation != null ? homePresentation.learnLabel : config.text.tutorial,
+            () => Navigate(() => { if (config.endless.replaceJourneyHomeButton) session.PlayEndlessLesson(); else session.PlayTutorial(); }));
         Bind(view, "Privacy", homePresentation != null ? homePresentation.privacyLabel : config.text.privacy, () => AdsPrivacyPanel.Instance?.OpenPrivacyMenu());
         if(homePresentation!=null)
         {
-            Bind(view,"Levels",homePresentation.heading,()=>ShowJourney(homePresentation.SuggestedLevel/Mathf.Max(1,config.ui.levelsPerPage)));
+            Bind(view,"Levels",homePresentation.heading,()=>{if(endlessEntry)ShowEndless();else ShowJourney(homePresentation.SuggestedLevel/Mathf.Max(1,config.ui.levelsPerPage));});
+            if(view.elements.Exists(item=>item.key=="Practice")) Bind(view,"Practice","Bài luyện • "+config.journeyLevels.Count+" màn",()=>ShowJourney(0));
             Bind(view,"Settings","",()=>homePresentation.OpenSettings(true)); Bind(view,"SettingsClose","×",()=>homePresentation.OpenSettings(false));
             Bind(view,"Sound","Âm thanh",homePresentation.ToggleSound); Bind(view,"Haptics","Rung",homePresentation.ToggleHaptics);
             for(int i=0;i<homePresentation.nodes.Length;i++)
-            { PopJourneyHomeView.Node node=homePresentation.nodes[i]; Bind(view,"Progress"+(i+1).ToString("00"),"",()=>ShowLevel(node.levelIndex),node.button.interactable); }
+            { PopJourneyHomeView.Node node=homePresentation.nodes[i]; Bind(view,"Progress"+(i+1).ToString("00"),"",()=>{if(endlessEntry)ShowEndless();else ShowLevel(node.levelIndex);},node.button.interactable); }
         }
     }
     private void TryShowHomeAfterIntro()
@@ -170,6 +212,26 @@ public sealed class PopGameplayUI : MonoBehaviour
         PopUIView view = OpenModal(PopUIPage.ReplaceRun, config.text.newRun, ShowHome);
         view.Text("Body", config.text.replaceRunWarning);
         Bind(view, "Play", config.text.newRun, () => Navigate(() => session.PlayClassic(false))); Bind(view, "Back", config.text.back, ShowHome);
+    }
+    public void ShowEndless()
+    {
+        PopRunSnapshot saved = session.SavedRun(PopGameMode.EndlessPop);
+        PopUIView view = OpenModal(PopUIPage.Level, config.endless.title, ShowHome);
+        view.Text("Description", config.endless.description);
+        view.Text("Goals", "Kỷ lục: " + session.Progress.endlessBestWave + " đợt hoàn thành\nĐiểm cao: " + session.Progress.endlessBestScore + " • Bóng: " + session.Progress.endlessBestBubbles);
+        view.Text("Moves", saved == null ? "Mỗi khối đặt thành công = 1 lượt. Không có đồng hồ đếm ngược." : saved.endlessPendingWave ? "Đã hoàn thành đợt " + saved.endlessWave + ". Tiếp tục để sang đợt mới."
+            : "Ván lưu: đợt " + saved.endlessWave + " • Còn " + (saved.endlessDefinition.moveLimit - saved.moves + saved.waveStartMoves) + " lượt");
+        view.Visible("Continue", saved != null);
+        Bind(view, "Continue", config.endless.resume, () => Navigate(() => session.PlayEndless(true)));
+        Bind(view, "Play", config.endless.newRun, () =>
+        {
+            if (session.SavedRun(PopGameMode.EndlessPop) == null) { Navigate(() => session.PlayEndless(false)); return; }
+            PopUIView confirm = OpenModal(PopUIPage.ReplaceRun, config.endless.newRun, ShowEndless);
+            confirm.Text("Body", config.endless.replaceWarning);
+            Bind(confirm, "Play", config.endless.newRun, () => Navigate(() => session.PlayEndless(false)));
+            Bind(confirm, "Back", config.text.back, ShowEndless);
+        });
+        Bind(view, "Back", config.text.back, ShowHome);
     }
     private void ShowJourney(int page)
     {
@@ -218,6 +280,7 @@ public sealed class PopGameplayUI : MonoBehaviour
     }
     private void ShowThemes()
     {
+        if (session.UsesAutomaticBackgrounds) { ShowJourney(0); return; }
         Action back = SceneManager.GetActiveScene().buildIndex == 0 ? ShowHome : ShowPause;
         PopUIView view = OpenModal(PopUIPage.Rewards, config.text.themes, back);
         for (int i = 0; i < config.themes.Count; ++i)
@@ -242,6 +305,7 @@ public sealed class PopGameplayUI : MonoBehaviour
         homeVisible = false; noticedEffects = 0; rewardNoticeUntil = 0;
         PopUIView view = View(PopUIPage.Hud); hud = (RectTransform)view.transform; hud.gameObject.SetActive(true);
         hudTitle = view.Element("Title").text; Bind(view, "Pause", config.text.pause, ShowPause); Refresh();
+        endlessQueue?.Refresh(session);
         if (session.RestoreWasRejected)
         {
             view = OpenModal(PopUIPage.InvalidSave, config.text.continueRun, () => CloseModal());
@@ -251,24 +315,42 @@ public sealed class PopGameplayUI : MonoBehaviour
     private void BuildLesson()
     {
         PopUIView view = View(PopUIPage.Tutorial); lesson = (RectTransform)view.transform; lesson.gameObject.SetActive(true);
+        if (session.IsEndlessLesson && endlessQueue != null && endlessQueue.lessonCoach != null)
+        { lesson.gameObject.SetActive(false); return; }
         lessonText = view.Element("Instruction").text; view.Visible("Skip", config.tutorial.allowSkip);
         Bind(view, "Skip", config.text.skipTutorial, () => Navigate(() => session.CompleteTutorial(true)));
     }
     public void ShowPause()
     {
         if (!session.IsActive || AdsPrivacyPanel.IsModalOpen || AdsService.Instance != null && AdsService.Instance.IsShowing) return;
-        session.SaveBeforeNavigation(); PopUIView view = OpenModal(PopUIPage.Pause, config.text.pause, () => CloseModal());
-        view.Text("Body", config.text.pauseNotice); Bind(view, "Resume", config.text.resume, () => CloseModal()); Bind(view, "Home", config.text.home, () => Navigate(session.GoHome));
-        Bind(view, "Privacy", config.text.privacy, () => AdsPrivacyPanel.Instance?.OpenPrivacyMenu()); Bind(view, "Rewards", config.text.themes, ShowThemes);
+        session.SaveBeforeNavigation(); PopPausePresentation presentation = View(PopUIPage.Pause).GetComponent<PopPausePresentation>();
+        PopUIView view = OpenModal(PopUIPage.Pause, presentation != null ? presentation.heading : config.text.pause, () => CloseModal());
+        view.Text("Body", presentation != null ? presentation.notice : config.text.pauseNotice);
+        Bind(view, "Resume", presentation != null ? presentation.resume : config.text.resume, () => CloseModal());
+        Bind(view, "Home", presentation != null ? presentation.home : config.text.home, () => Navigate(session.GoHome));
+        Bind(view, "Privacy", presentation != null ? presentation.privacy : config.text.privacy, () => AdsPrivacyPanel.Instance?.OpenPrivacyMenu());
+        if (session.UsesAutomaticBackgrounds) Bind(view, "Rewards", presentation != null ? presentation.practice : "BÀI LUYỆN", () => ShowJourney(0));
+        else Bind(view, "Rewards", presentation != null ? presentation.rewards : config.text.themes, ShowThemes);
+        if (view.elements.Exists(item => item.key == "Close")) Bind(view, "Close", "", () => CloseModal());
+        presentation?.RefreshSettings();
     }
     public void ShowOutcome(bool won, int stars)
     {
         CloseModal(false); string title = session.Mode == PopGameMode.Tutorial && won ? config.text.tutorialComplete : won ? config.text.victory : config.text.failed;
         PopUIView view = OpenModal(won ? PopUIPage.Victory : PopUIPage.Failure, title, () => Navigate(session.GoHome));
+        if (session.IsEndless)
+        {
+            view.Text("Title", "KẾT THÚC ENDLESS POP");
+            view.Text("Reason", session.WaveMovesRemaining == 0 ? "Hết lượt nhưng vẫn còn bóng." : "Không còn khối nào đặt được.");
+            view.Text("Body", "Đã qua " + (session.EndlessWave - 1) + " đợt\nTổng bóng: " + session.BubblesPopped + "\nĐiểm: " + GameFlowManager._instance.Score + "\nKỷ lục: " + session.Progress.endlessBestWave + " đợt");
+            Bind(view, "Retry", config.endless.newRun, () => Navigate(() => session.PlayEndless(false)));
+            Bind(view, "Home", config.text.home, () => Navigate(session.GoHome)); return;
+        }
         if (won) RevealStars(view, stars); else view.Text("Reason", session.Moves >= session.Definition.moveLimit ? config.text.outOfMoves : config.text.noMoves);
         view.Text("Body", GoalText(session.Definition, true) + "\n" + config.text.moves + ": " + session.Moves + "   " + config.text.score + ": " + GameFlowManager._instance.Score);
         if (won)
         {
+            view.Visible("Next", session.Mode != PopGameMode.Daily);
             var unlocked = new List<string>(session.NewlyUnlockedThemes); unlocked.AddRange(session.NewlyUnlockedEffects);
             view.Text("Rewards", unlocked.Count > 0 ? Format(config.text.rewardUnlocked, string.Join(", ", unlocked)) : session.DailyTrophyEarned ? config.text.dailyTrophy : "");
             Bind(view, "Next", session.Mode == PopGameMode.Tutorial ? config.text.play : session.Mode == PopGameMode.Journey ? config.text.next : config.text.home, () => Navigate(() =>
@@ -281,8 +363,11 @@ public sealed class PopGameplayUI : MonoBehaviour
     private void Refresh()
     {
         if (session == null || changingScene) return;
+        ApplyModePresentation();
+        endlessQueue?.Refresh(session);
+        classicHUD?.Refresh(session);
         if (hud != null && session.IsInitialized && session.Mode == PopGameMode.Tutorial && lesson == null) BuildLesson();
-        if (hudTitle != null)
+        if (hudTitle != null && !session.UsesEndlessPresentation && !(session.Mode == PopGameMode.Classic && HasClassicHUD))
         {
             if (session.NewlyUnlockedEffects.Count > noticedEffects) { noticedEffects = session.NewlyUnlockedEffects.Count; rewardNoticeUntil = Time.unscaledTime + config.ui.rewardNoticeSeconds; }
             PopUIView view = View(PopUIPage.Hud);
@@ -290,13 +375,37 @@ public sealed class PopGameplayUI : MonoBehaviour
             view.Text("Stats", session.Mode == PopGameMode.Classic ? config.text.lines + ": " + session.Lines + " · " + config.text.combo + ": " + session.MaxCombo : config.text.moves + ": " + Mathf.Max(0, (session.Definition?.moveLimit ?? 0) - session.Moves) + " · " + session.Moves + "/" + session.Definition?.moveLimit);
             view.Text("Goals", Time.unscaledTime < rewardNoticeUntil ? Format(config.text.rewardUnlocked, string.Join(", ", session.NewlyUnlockedEffects)) : session.Mode == PopGameMode.Classic ? config.text.classicDescription : GoalText(session.Definition, true));
         }
-        if (lessonText != null && session.Mode == PopGameMode.Tutorial)
+        if (lesson != null && session.Mode == PopGameMode.Tutorial)
         {
             View(PopUIPage.Tutorial).Text("Instruction", TutorialInstruction());
             FindFirstObjectByType<Board>()?.ShowTutorialPlacement(session.IsActive && session.Moves < session.Definition.verifiedSolution.Count ? session.Definition.verifiedSolution[session.Moves] : null);
         }
     }
-    private string TutorialInstruction() => config.tutorial.stepInstructions.Length == 0 ? config.text.lessonHint : config.tutorial.stepInstructions[Mathf.Clamp(session.Moves, 0, config.tutorial.stepInstructions.Length - 1)];
+    private void ApplyModePresentation()
+    {
+        bool dedicatedClassic = session.Mode == PopGameMode.Classic && HasClassicHUD;
+        bool dedicated = session.UsesEndlessPresentation && endlessQueue != null && endlessQueue.HasPresentation || dedicatedClassic;
+        if (hud != null && hud.gameObject.activeSelf == dedicated) hud.gameObject.SetActive(!dedicated);
+        // Results do not switch back to the retired HUD. Game Over owns an
+        // independent sorting canvas; the shared canvas still hosts combo/fever.
+        bool hideLegacy = dedicated;
+        // Classic's legacy canvas also renders combo/fever effects. Hide only
+        // its old artwork in this mode, not the canvas hosting those effects.
+        bool hideCanvas = hideLegacy && !dedicatedClassic;
+        if (lastEndlessPresentation == hideLegacy && lastLegacyCanvasHidden == hideCanvas) return;
+        lastEndlessPresentation = hideLegacy; lastLegacyCanvasHidden = hideCanvas;
+        foreach (var pair in legacyScoreGraphics) if (pair.Key != null) pair.Key.enabled = !hideLegacy && pair.Value;
+        foreach (var pair in legacyScoreCanvases) if (pair.Key != null) pair.Key.enabled = !hideCanvas && pair.Value;
+        // Keep Classic's shared host usable for its result buttons. Old score /
+        // settings objects are inactive; hiding their graphics never requires
+        // disabling the raycaster of the result/effect host.
+        foreach (var pair in legacyScoreRaycasters) if (pair.Key != null) pair.Key.enabled = !hideCanvas && pair.Value;
+    }
+    private string TutorialInstruction()
+    {
+        var instructions = session.IsEndlessLesson ? config.tutorial.endlessInstructions : config.tutorial.stepInstructions;
+        return instructions.Length == 0 ? config.text.lessonHint : instructions[Mathf.Clamp(session.Moves, 0, instructions.Length - 1)];
+    }
     private string GoalText(PopLevelDefinition level, bool progress)
     {
         if (level == null) return ""; var goals = new List<string>();
@@ -309,7 +418,9 @@ public sealed class PopGameplayUI : MonoBehaviour
     {
         CloseModal(); savedTimeScale = Time.timeScale; modalPaused = true; Time.timeScale = 0; backAction = back;
         if (home != null) home.gameObject.SetActive(false);
-        PopUIView view = View(page); modal = (RectTransform)view.transform; modal.gameObject.SetActive(true); view.Text("Title", title); return view;
+        PopUIView view = View(page); modal = (RectTransform)view.transform; modal.gameObject.SetActive(true); view.Text("Title", title);
+        if (endlessQueue != null) endlessQueue.gameObject.SetActive(false);
+        if (classicHUD != null) classicHUD.gameObject.SetActive(false); return view;
     }
     private void CloseModal(bool restoreTime = true)
     {
@@ -318,6 +429,8 @@ public sealed class PopGameplayUI : MonoBehaviour
         if (modal != null) modal.gameObject.SetActive(false); modal = null; backAction = null;
         if (restoreTime && modalPaused) Time.timeScale = savedTimeScale;
         modalPaused = false; if (homeVisible && home != null) home.gameObject.SetActive(true);
+        endlessQueue?.Refresh(session);
+        classicHUD?.Refresh(session);
     }
     private void Navigate(Action action)
     {
@@ -369,6 +482,9 @@ public sealed class PopGameplayUI : MonoBehaviour
         if (Instance != this) return;
         if (session != null) session.Changed -= Refresh;
         foreach (var pair in listeners) if (pair.Key != null) pair.Key.onClick.RemoveListener(pair.Value);
+        foreach (var pair in legacyScoreCanvases) if (pair.Key != null) pair.Key.enabled = pair.Value;
+        foreach (var pair in legacyScoreRaycasters) if (pair.Key != null) pair.Key.enabled = pair.Value;
+        foreach (var pair in legacyScoreGraphics) if (pair.Key != null) pair.Key.enabled = pair.Value;
         if (modalPaused) Time.timeScale = savedTimeScale; Instance = null;
     }
 }
